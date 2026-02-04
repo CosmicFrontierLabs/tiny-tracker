@@ -27,6 +27,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 WORKDIR /app/backend
 RUN cargo build --release
+RUN /app/target/release/action-tracker --check-assets
 
 # Build diesel CLI for migrations
 RUN cargo install diesel_cli --no-default-features --features postgres

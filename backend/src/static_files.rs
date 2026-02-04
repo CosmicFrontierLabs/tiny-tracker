@@ -9,6 +9,14 @@ use rust_embed::RustEmbed;
 #[folder = "../frontend/dist/"]
 struct Assets;
 
+pub fn verify_assets_embedded() {
+    assert!(
+        Assets::get("index.html").is_some(),
+        "Frontend assets not embedded — was the frontend built before the backend? \
+         Run `cd frontend && trunk build --release` first."
+    );
+}
+
 pub async fn static_handler(uri: Uri) -> impl IntoResponse {
     let path = uri.path().trim_start_matches('/');
 
