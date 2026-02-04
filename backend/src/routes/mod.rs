@@ -9,7 +9,7 @@ pub mod vendors;
 
 use axum::{
     extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
+    http::{header, request::Parts, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -19,6 +19,8 @@ use shared::ApiError;
 use std::sync::Arc;
 
 use crate::AppState;
+
+const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -105,6 +107,7 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         .map_err(|_| {
             (
                 StatusCode::UNAUTHORIZED,
+                [(header::SET_COOKIE, CLEAR_TOKEN_COOKIE)],
                 Json(ApiError::unauthorized("Invalid or expired token")),
             )
                 .into_response()
