@@ -100,6 +100,8 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    static_files::verify_assets_embedded();
+
     let config = AppConfig::from_env();
 
     if config.dev_mode {
