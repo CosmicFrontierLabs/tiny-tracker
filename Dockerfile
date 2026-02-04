@@ -49,5 +49,7 @@ WORKDIR /app
 
 EXPOSE 8080
 
-# Run migrations then start the server
-CMD diesel migration run && action-tracker
+# Strip channel_binding=require for diesel CLI (libpq hangs with PgBouncer+channel_binding)
+# The Rust app handles channel_binding fine via tokio-postgres
+CMD DIESEL_URL=$(echo $DATABASE_URL | sed 's/&channel_binding=require//') \
+    DATABASE_URL=$DIESEL_URL diesel migration run && action-tracker
