@@ -88,6 +88,12 @@ fn establish_connection(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().any(|a| a == "--check-assets") {
+        static_files::verify_assets_embedded();
+        println!("Frontend assets OK");
+        return Ok(());
+    }
+
     // Load .env if present
     dotenvy::dotenv().ok();
 
