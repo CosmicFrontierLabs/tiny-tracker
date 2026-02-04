@@ -6,11 +6,67 @@ on:
   pull_request:
 
 env:
+  CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
   IMAGE_NAME: cosmicfrontierlabs/tiny-tracker
 
 jobs:
-  build:
+  check:
+    name: Format & Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: Stub frontend dist for rust-embed
+        run: mkdir -p frontend/dist
+
+      - name: clippy (backend, shared, cli)
+        run: cargo clippy -p backend -p shared -p cli --all-targets -- -D warnings
+
+  check-wasm:
+    name: Clippy (WASM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: clippy (frontend)
+        run: cargo clippy -p frontend --target wasm32-unknown-unknown -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Stub frontend dist for rust-embed
+        run: mkdir -p frontend/dist
+
+      - name: cargo test
+        run: cargo test -p backend -p shared -p cli
+
+  docker:
+    name: Docker Build
+    needs: [check, check-wasm, test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
