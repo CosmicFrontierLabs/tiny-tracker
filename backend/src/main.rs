@@ -74,11 +74,13 @@ impl AppConfig {
 fn establish_connection(
     config: &str,
 ) -> futures_util::future::BoxFuture<'_, diesel::ConnectionResult<AsyncPgConnection>> {
-    let fut = async {
+    // Strip channel_binding=require — PgBouncer (NeonDB pooler) doesn't support it
+    let config = config.replace("&channel_binding=require", "");
+    let fut = async move {
         let rustls_config = rustls::ClientConfig::with_platform_verifier()
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
-        let (client, conn) = tokio_postgres::connect(config, tls)
+        let (client, conn) = tokio_postgres::connect(&config, tls)
             .await
             .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
         AsyncPgConnection::try_from_client_and_connection(client, conn).await
