@@ -135,6 +135,13 @@ pub fn home() -> Html {
         })
     };
 
+    let on_data_refresh = {
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
+
     let on_item_detail_close = {
         let selected_item_id = selected_item_id.clone();
         let refresh_trigger = refresh_trigger.clone();
@@ -273,6 +280,7 @@ pub fn home() -> Html {
                         categories={(*categories).clone()}
                         on_close={on_new_item_modal_close}
                         on_created={on_item_created}
+                        on_refresh={on_data_refresh.clone()}
                     />
                 }
 

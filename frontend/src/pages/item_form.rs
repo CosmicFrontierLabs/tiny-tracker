@@ -11,6 +11,7 @@ pub struct NewItemModalProps {
     pub categories: Vec<CategoryResponse>,
     pub on_close: Callback<()>,
     pub on_created: Callback<()>,
+    pub on_refresh: Callback<()>,
 }
 
 #[function_component(NewItemModal)]
@@ -143,7 +144,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
         let adding_category = adding_category.clone();
         let category_id = category_id.clone();
         let vendor_id = vendor_id.clone();
-        let on_created = props.on_created.clone();
+        let on_refresh = props.on_refresh.clone();
 
         Callback::from(move |_| {
             let name = (*new_category_name).clone();
@@ -155,7 +156,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
             let adding_category = adding_category.clone();
             let category_id = category_id.clone();
             let vendor_id_val = *vendor_id;
-            let on_created = on_created.clone();
+            let on_refresh = on_refresh.clone();
 
             wasm_bindgen_futures::spawn_local(async move {
                 let body = serde_json::json!({
@@ -175,8 +176,8 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
                         }
                         adding_category.set(false);
                         new_category_name.set(String::new());
-                        // Trigger a refresh to reload categories
-                        on_created.emit(());
+                        // Trigger a refresh to reload categories without closing modal
+                        on_refresh.emit(());
                     }
                     _ => {}
                 }
