@@ -44,6 +44,7 @@ enum HistoryEntry {
 #[derive(Properties, PartialEq)]
 pub struct ItemDetailModalProps {
     pub item_id: String,
+    pub users: Vec<shared::User>,
     pub on_close: Callback<()>,
 }
 
@@ -114,6 +115,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let submitting = use_state(|| false);
     let refresh_trigger = use_state(|| 0u32);
     let changing_status = use_state(|| false);
+    let changing_owner = use_state(|| false);
+    let changing_priority = use_state(|| false);
 
     // Editing states
     let editing_title = use_state(|| false);
@@ -491,6 +494,98 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
         })
     };
 
+    // Owner change handler
+    let on_owner_change = {
+        let item = item.clone();
+        let changing_owner = changing_owner.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            let new_owner_id: i32 = match select.value().parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
+            let current_owner_id = (*item).as_ref().map(|i| i.owner_id).unwrap_or(0);
+
+            if new_owner_id == current_owner_id {
+                return;
+            }
+
+            let changing_owner = changing_owner.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            changing_owner.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = serde_json::json!({
+                    "owner_id": new_owner_id,
+                });
+
+                match Request::patch(&format!("/api/items/{}", item_id))
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.ok() => {
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                    _ => {}
+                }
+                changing_owner.set(false);
+            });
+        })
+    };
+
+    // Priority change handler
+    let on_priority_change = {
+        let item = item.clone();
+        let changing_priority = changing_priority.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            let new_priority = select.value();
+            let current_priority = (*item)
+                .as_ref()
+                .map(|i| i.priority.clone())
+                .unwrap_or_default();
+
+            if new_priority == current_priority {
+                return;
+            }
+
+            let changing_priority = changing_priority.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            changing_priority.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = serde_json::json!({
+                    "priority": new_priority,
+                });
+
+                match Request::patch(&format!("/api/items/{}", item_id))
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.ok() => {
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                    _ => {}
+                }
+                changing_priority.set(false);
+            });
+        })
+    };
+
     let priority_class = |priority: &str| -> &'static str {
         match priority {
             "High" => "priority-high",
@@ -561,8 +656,20 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                             <span class="meta-item">
                                 <strong>{ "Category: " }</strong>{ &i.category }
                             </span>
-                            <span class={classes!("meta-item", priority_class(&i.priority))}>
-                                <strong>{ "Priority: " }</strong>{ &i.priority }
+                            <span class="meta-item">
+                                <strong>{ "Priority: " }</strong>
+                                <select
+                                    class={classes!("priority-select", priority_class(&i.priority))}
+                                    onchange={on_priority_change}
+                                    disabled={*changing_priority}
+                                >
+                                    <option value="High" selected={i.priority == "High"}>{ "High" }</option>
+                                    <option value="Medium" selected={i.priority == "Medium"}>{ "Medium" }</option>
+                                    <option value="Low" selected={i.priority == "Low"}>{ "Low" }</option>
+                                </select>
+                                if *changing_priority {
+                                    <span class="saving-indicator">{ " (saving...)" }</span>
+                                }
                             </span>
                             <span class="meta-item">
                                 <strong>{ "Status: " }</strong>
@@ -579,6 +686,23 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                     })}
                                 </select>
                                 if *changing_status {
+                                    <span class="saving-indicator">{ " (saving...)" }</span>
+                                }
+                            </span>
+                            <span class="meta-item">
+                                <strong>{ "Owner: " }</strong>
+                                <select
+                                    class="owner-select"
+                                    onchange={on_owner_change}
+                                    disabled={*changing_owner}
+                                >
+                                    { for props.users.iter().map(|u| {
+                                        html! {
+                                            <option value={u.id.to_string()} selected={u.id == i.owner_id}>{ &u.name }</option>
+                                        }
+                                    })}
+                                </select>
+                                if *changing_owner {
                                     <span class="saving-indicator">{ " (saving...)" }</span>
                                 }
                             </span>

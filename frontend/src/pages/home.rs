@@ -291,6 +291,7 @@ pub fn home() -> Html {
                 if let Some(item_id) = (*selected_item_id).clone() {
                     <ItemDetailModal
                         item_id={item_id}
+                        users={(*users).clone()}
                         on_close={on_item_detail_close}
                     />
                 }
