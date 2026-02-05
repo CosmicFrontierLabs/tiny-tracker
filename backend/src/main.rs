@@ -131,6 +131,20 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .expect("Failed to create pool");
 
+    // Verify database connectivity at startup
+    {
+        use diesel_async::RunQueryDsl;
+        let mut conn = pool
+            .get()
+            .await
+            .expect("Failed to connect to database at startup");
+        diesel::sql_query("SELECT 1")
+            .execute(&mut conn)
+            .await
+            .expect("Database health check failed");
+        tracing::info!("Database connection verified");
+    }
+
     let state = AppState {
         pool,
         config: config.clone(),
