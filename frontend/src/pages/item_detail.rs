@@ -117,6 +117,9 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let changing_status = use_state(|| false);
     let changing_owner = use_state(|| false);
     let changing_priority = use_state(|| false);
+    let editing_due_date = use_state(|| false);
+    let edit_due_date_value = use_state(String::new);
+    let saving_due_date = use_state(|| false);
 
     // Editing states
     let editing_title = use_state(|| false);
@@ -586,6 +589,93 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
         })
     };
 
+    // Due date editing handlers
+    let on_due_date_click = {
+        let editing_due_date = editing_due_date.clone();
+        let edit_due_date_value = edit_due_date_value.clone();
+        let item = item.clone();
+        Callback::from(move |_| {
+            if let Some(ref i) = *item {
+                let value = i.due_date.map(|d| d.to_string()).unwrap_or_default();
+                edit_due_date_value.set(value);
+                editing_due_date.set(true);
+            }
+        })
+    };
+
+    let on_due_date_input = {
+        let edit_due_date_value = edit_due_date_value.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
+            edit_due_date_value.set(input.value());
+        })
+    };
+
+    let on_due_date_blur = {
+        let editing_due_date = editing_due_date.clone();
+        let edit_due_date_value = edit_due_date_value.clone();
+        let item = item.clone();
+        let saving_due_date = saving_due_date.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |_| {
+            let new_date = (*edit_due_date_value).clone();
+            let current_date = (*item)
+                .as_ref()
+                .and_then(|i| i.due_date)
+                .map(|d| d.to_string())
+                .unwrap_or_default();
+
+            if new_date == current_date {
+                editing_due_date.set(false);
+                return;
+            }
+
+            let editing_due_date = editing_due_date.clone();
+            let saving_due_date = saving_due_date.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            saving_due_date.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = if new_date.is_empty() {
+                    serde_json::json!({ "due_date": null })
+                } else {
+                    serde_json::json!({ "due_date": new_date })
+                };
+
+                match Request::patch(&format!("/api/items/{}", item_id))
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.ok() => {
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                    _ => {}
+                }
+                saving_due_date.set(false);
+                editing_due_date.set(false);
+            });
+        })
+    };
+
+    let on_due_date_keydown = {
+        let on_due_date_blur = on_due_date_blur.clone();
+        let editing_due_date = editing_due_date.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if e.key() == "Enter" {
+                e.prevent_default();
+                on_due_date_blur.emit(FocusEvent::new("blur").unwrap());
+            } else if e.key() == "Escape" {
+                editing_due_date.set(false);
+            }
+        })
+    };
+
     let priority_class = |priority: &str| -> &'static str {
         match priority {
             "High" => "priority-high",
@@ -651,7 +741,23 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 <strong>{ "Created: " }</strong>{ format_naive_date(&i.create_date) }
                             </span>
                             <span class="meta-item">
-                                <strong>{ "Due: " }</strong>{ i.due_date.as_ref().map(format_naive_date).unwrap_or_else(|| "TBD".to_string()) }
+                                <strong>{ "Due: " }</strong>
+                                if *editing_due_date {
+                                    <input
+                                        type="date"
+                                        class="due-date-edit-input"
+                                        value={(*edit_due_date_value).clone()}
+                                        oninput={on_due_date_input}
+                                        onblur={on_due_date_blur}
+                                        onkeydown={on_due_date_keydown}
+                                        autofocus=true
+                                    />
+                                } else {
+                                    <span class="editable-value" onclick={on_due_date_click} title="Click to edit">
+                                        { i.due_date.as_ref().map(format_naive_date).unwrap_or_else(|| "TBD".to_string()) }
+                                        if *saving_due_date { <span class="saving-indicator">{ " (saving...)" }</span> }
+                                    </span>
+                                }
                             </span>
                             <span class="meta-item">
                                 <strong>{ "Category: " }</strong>{ &i.category }
