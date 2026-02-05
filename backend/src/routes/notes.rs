@@ -7,7 +7,7 @@ use axum::{
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use shared::{ApiError, CreateNote};
+use shared::{ApiError, CreateNote, NoteCreateResponse, NoteResponse};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, notes, users};
@@ -73,16 +73,14 @@ pub async fn list(
 
     let result: Vec<_> = updates_result
         .into_iter()
-        .map(|(n, u)| {
-            serde_json::json!({
-                "id": n.id,
-                "action_item_id": n.action_item_id,
-                "date": n.note_date,
-                "author_id": n.author_id,
-                "author_name": u.name,
-                "content": n.content,
-                "created_at": n.created_at,
-            })
+        .map(|(n, u)| NoteResponse {
+            id: n.id,
+            action_item_id: n.action_item_id,
+            date: n.note_date,
+            author_id: n.author_id,
+            author_name: u.name,
+            content: n.content,
+            created_at: n.created_at,
         })
         .collect();
 
@@ -179,14 +177,14 @@ pub async fn create(
 
     (
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": note.id,
-            "action_item_id": note.action_item_id,
-            "note_date": note.note_date,
-            "author_id": note.author_id,
-            "content": note.content,
-            "created_at": note.created_at,
-        })),
+        Json(NoteCreateResponse {
+            id: note.id,
+            action_item_id: note.action_item_id,
+            note_date: note.note_date,
+            author_id: note.author_id,
+            content: note.content,
+            created_at: note.created_at,
+        }),
     )
         .into_response()
 }

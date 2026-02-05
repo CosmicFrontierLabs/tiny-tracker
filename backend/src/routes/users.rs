@@ -35,14 +35,12 @@ pub async fn list(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl I
 
     let result: Vec<_> = all_users
         .into_iter()
-        .map(|u| {
-            serde_json::json!({
-                "id": u.id,
-                "email": u.email,
-                "name": u.name,
-                "initials": u.initials,
-                "created_at": u.created_at,
-            })
+        .map(|u| shared::User {
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            initials: u.initials,
+            created_at: u.created_at,
         })
         .collect();
 

@@ -245,17 +245,19 @@ pub async fn logout() -> Response {
     (
         StatusCode::OK,
         [(header::SET_COOKIE, cookie)],
-        Json(serde_json::json!({"status": "logged out"})),
+        Json(shared::LogoutResponse {
+            status: "logged out".to_string(),
+        }),
     )
         .into_response()
 }
 
-pub async fn me(auth_user: AuthUser) -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "user_id": auth_user.user_id,
-        "email": auth_user.email,
-        "name": auth_user.name,
-    }))
+pub async fn me(auth_user: AuthUser) -> Json<shared::CurrentUserResponse> {
+    Json(shared::CurrentUserResponse {
+        user_id: auth_user.user_id,
+        email: auth_user.email,
+        name: auth_user.name,
+    })
 }
 
 fn create_jwt(secret: &str, user: &User) -> String {

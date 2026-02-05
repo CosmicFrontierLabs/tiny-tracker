@@ -7,7 +7,7 @@ use axum::{
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use serde::Deserialize;
-use shared::ApiError;
+use shared::{ApiError, CategoryResponse};
 use std::sync::Arc;
 
 use crate::db::schema::{categories, vendors};
@@ -49,18 +49,7 @@ pub async fn list_all(State(state): State<Arc<AppState>>, _auth: AuthUser) -> im
         }
     };
 
-    let result: Vec<_> = cats
-        .into_iter()
-        .map(|c| {
-            serde_json::json!({
-                "id": c.id,
-                "vendor_id": c.vendor_id,
-                "name": c.name,
-                "description": c.description,
-                "created_at": c.created_at,
-            })
-        })
-        .collect();
+    let result: Vec<_> = cats.into_iter().map(to_category_response).collect();
 
     Json(result).into_response()
 }
@@ -97,18 +86,7 @@ pub async fn list_by_vendor(
         }
     };
 
-    let result: Vec<_> = cats
-        .into_iter()
-        .map(|c| {
-            serde_json::json!({
-                "id": c.id,
-                "vendor_id": c.vendor_id,
-                "name": c.name,
-                "description": c.description,
-                "created_at": c.created_at,
-            })
-        })
-        .collect();
+    let result: Vec<_> = cats.into_iter().map(to_category_response).collect();
 
     Json(result).into_response()
 }
@@ -199,15 +177,15 @@ pub async fn create(
         }
     };
 
-    (
-        StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": category.id,
-            "vendor_id": category.vendor_id,
-            "name": category.name,
-            "description": category.description,
-            "created_at": category.created_at,
-        })),
-    )
-        .into_response()
+    (StatusCode::CREATED, Json(to_category_response(category))).into_response()
+}
+
+fn to_category_response(c: Category) -> CategoryResponse {
+    CategoryResponse {
+        id: c.id,
+        vendor_id: c.vendor_id,
+        name: c.name,
+        description: c.description,
+        created_at: c.created_at,
+    }
 }

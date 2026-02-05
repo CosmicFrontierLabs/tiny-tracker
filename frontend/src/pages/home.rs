@@ -1,30 +1,13 @@
 use gloo_net::http::Request;
+use shared::{ActionItemResponse, CategoryResponse, Vendor};
 use wasm_bindgen::JsCast;
 use web_sys::HtmlSelectElement;
 use yew::prelude::*;
 
 use crate::components::Header;
 use crate::pages::item_detail::ItemDetailModal;
-use crate::pages::item_form::{Category, NewItemModal, User, Vendor};
+use crate::pages::item_form::NewItemModal;
 use crate::pages::manage_vendors::ManageVendorsModal;
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-struct ActionItemWithStatus {
-    id: String,
-    vendor_id: i32,
-    number: i32,
-    title: String,
-    create_date: String,
-    due_date: Option<String>,
-    category: String,
-    owner_id: i32,
-    priority: String,
-    status: String,
-    created_by_name: String,
-    created_by_initials: Option<String>,
-    owner_name: String,
-    owner_initials: Option<String>,
-}
 
 fn name_to_color(name: &str) -> String {
     let hash: u32 = name
@@ -53,10 +36,10 @@ fn reload_page() {
 
 #[function_component(Home)]
 pub fn home() -> Html {
-    let items = use_state(Vec::<ActionItemWithStatus>::new);
+    let items = use_state(Vec::<ActionItemResponse>::new);
     let vendors = use_state(Vec::<Vendor>::new);
-    let users = use_state(Vec::<User>::new);
-    let categories = use_state(Vec::<Category>::new);
+    let users = use_state(Vec::<shared::User>::new);
+    let categories = use_state(Vec::<CategoryResponse>::new);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let show_new_item_modal = use_state(|| false);
@@ -85,7 +68,7 @@ pub fn home() -> Html {
                             return;
                         }
                         if resp.ok() {
-                            match resp.json::<Vec<ActionItemWithStatus>>().await {
+                            match resp.json::<Vec<ActionItemResponse>>().await {
                                 Ok(data) => {
                                     items.set(data);
                                 }
@@ -111,14 +94,14 @@ pub fn home() -> Html {
 
                 // Fetch users for the dropdown
                 if let Ok(resp) = Request::get("/api/users").send().await {
-                    if let Ok(data) = resp.json::<Vec<User>>().await {
+                    if let Ok(data) = resp.json::<Vec<shared::User>>().await {
                         users.set(data);
                     }
                 }
 
                 // Fetch categories for the dropdown
                 if let Ok(resp) = Request::get("/api/categories").send().await {
-                    if let Ok(data) = resp.json::<Vec<Category>>().await {
+                    if let Ok(data) = resp.json::<Vec<CategoryResponse>>().await {
                         categories.set(data);
                     }
                 }
@@ -366,9 +349,9 @@ pub fn home() -> Html {
                                         <td class={status_class(&item.status)}>
                                             { &item.status }
                                         </td>
-                                        <td>{ &item.create_date }</td>
+                                        <td>{ item.create_date.to_string() }</td>
                                         <td>
-                                            { item.due_date.as_deref().unwrap_or("-") }
+                                            { item.due_date.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string()) }
                                         </td>
                                     </tr>
                                 }

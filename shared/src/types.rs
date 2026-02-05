@@ -101,7 +101,7 @@ impl Status {
 // Domain Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vendor {
     pub id: i32,
     pub prefix: String,
@@ -112,7 +112,7 @@ pub struct Vendor {
     pub archived: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VendorWithCounts {
     #[serde(flatten)]
     pub vendor: Vendor,
@@ -121,7 +121,7 @@ pub struct VendorWithCounts {
     pub last_updated: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
     pub id: i32,
     pub email: String,
@@ -130,7 +130,7 @@ pub struct User {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionItem {
     pub id: String,
     pub vendor_id: i32,
@@ -146,7 +146,7 @@ pub struct ActionItem {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionItemWithStatus {
     #[serde(flatten)]
     pub item: ActionItem,
@@ -154,7 +154,7 @@ pub struct ActionItemWithStatus {
     pub status_changed_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Note {
     pub id: i32,
     pub action_item_id: String,
@@ -164,7 +164,7 @@ pub struct Note {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusHistory {
     pub id: i32,
     pub action_item_id: String,
@@ -178,21 +178,21 @@ pub struct StatusHistory {
 // API Request Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateVendor {
     pub prefix: String,
     pub name: String,
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateVendor {
     pub name: Option<String>,
     pub description: Option<String>,
     pub archived: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateActionItem {
     pub title: String,
     pub due_date: Option<NaiveDate>,
@@ -202,7 +202,7 @@ pub struct CreateActionItem {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateActionItem {
     pub title: Option<String>,
     pub due_date: Option<Option<NaiveDate>>,
@@ -212,13 +212,13 @@ pub struct UpdateActionItem {
     pub description: Option<Option<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateNote {
     pub note_date: Option<NaiveDate>,
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChangeStatus {
     pub status: Status,
     pub comment: Option<String>,
@@ -228,12 +228,12 @@ pub struct ChangeStatus {
 // API Response Types
 // ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApiError {
     pub error: ApiErrorBody,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ApiErrorBody {
     pub code: String,
     pub message: String,
@@ -274,7 +274,94 @@ impl ApiError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HealthResponse {
     pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CurrentUserResponse {
+    pub user_id: i32,
+    pub email: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogoutResponse {
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CategoryResponse {
+    pub id: i32,
+    pub vendor_id: i32,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionItemResponse {
+    pub id: String,
+    pub vendor_id: i32,
+    pub number: i32,
+    pub title: String,
+    pub description: Option<String>,
+    pub create_date: NaiveDate,
+    pub created_by_id: i32,
+    pub created_by_name: String,
+    pub created_by_initials: Option<String>,
+    pub due_date: Option<NaiveDate>,
+    pub category_id: i32,
+    pub category: String,
+    pub owner_id: i32,
+    pub owner_name: String,
+    pub owner_initials: Option<String>,
+    pub priority: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub status: String,
+    pub status_changed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoteResponse {
+    pub id: i32,
+    pub action_item_id: String,
+    pub date: NaiveDate,
+    pub author_id: i32,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoteCreateResponse {
+    pub id: i32,
+    pub action_item_id: String,
+    pub note_date: NaiveDate,
+    pub author_id: i32,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StatusHistoryResponse {
+    pub id: i32,
+    pub action_item_id: String,
+    pub status: String,
+    pub changed_by_id: i32,
+    pub changed_by_name: String,
+    pub changed_at: DateTime<Utc>,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StatusChangeResponse {
+    pub id: i32,
+    pub action_item_id: String,
+    pub status: String,
+    pub changed_by_id: i32,
+    pub changed_at: DateTime<Utc>,
+    pub comment: Option<String>,
 }
