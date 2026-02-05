@@ -44,6 +44,12 @@ fn get_initials(name: &str, fallback_initials: Option<&str>) -> String {
         .to_uppercase()
 }
 
+fn reload_page() {
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().reload();
+    }
+}
+
 #[function_component(Home)]
 pub fn home() -> Html {
     let items = use_state(Vec::<ActionItemWithStatus>::new);
@@ -72,6 +78,10 @@ pub fn home() -> Html {
                 // Fetch items
                 match Request::get("/api/items").send().await {
                     Ok(resp) => {
+                        if resp.status() == 401 {
+                            reload_page();
+                            return;
+                        }
                         if resp.ok() {
                             match resp.json::<Vec<ActionItemWithStatus>>().await {
                                 Ok(data) => {
