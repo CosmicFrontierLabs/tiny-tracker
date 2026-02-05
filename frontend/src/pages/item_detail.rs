@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use gloo_net::http::Request;
 use js_sys::{Date, Object, Reflect};
 use regex::Regex;
+use shared::{ActionItemResponse, NoteResponse, StatusHistoryResponse};
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
@@ -22,38 +23,6 @@ fn display_to_api(display: &str) -> &'static str {
         .find(|(d, _)| *d == display)
         .map(|(_, a)| *a)
         .unwrap_or("new")
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-pub struct ActionItem {
-    pub id: String,
-    pub vendor_id: i32,
-    pub title: String,
-    pub description: Option<String>,
-    pub create_date: NaiveDate,
-    pub due_date: Option<NaiveDate>,
-    pub category: String,
-    pub priority: String,
-    pub status: String,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-struct Note {
-    id: i32,
-    date: NaiveDate,
-    author_id: i32,
-    author_name: String,
-    content: String,
-    created_at: DateTime<Utc>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-struct StatusChange {
-    id: i32,
-    status: String,
-    changed_by_name: String,
-    changed_at: DateTime<Utc>,
-    comment: Option<String>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -137,7 +106,7 @@ fn format_naive_date(date: &NaiveDate) -> String {
 
 #[function_component(ItemDetailModal)]
 pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
-    let item = use_state(|| None::<ActionItem>);
+    let item = use_state(|| None::<ActionItemResponse>);
     let history = use_state(Vec::<HistoryEntry>::new);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
@@ -169,7 +138,7 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                 // Fetch item
                 match Request::get(&format!("/api/items/{}", iid)).send().await {
                     Ok(resp) if resp.ok() => {
-                        if let Ok(data) = resp.json::<ActionItem>().await {
+                        if let Ok(data) = resp.json::<ActionItemResponse>().await {
                             item.set(Some(data));
                         }
                     }
@@ -189,7 +158,7 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     .send()
                     .await
                 {
-                    if let Ok(notes) = resp.json::<Vec<Note>>().await {
+                    if let Ok(notes) = resp.json::<Vec<NoteResponse>>().await {
                         for note in notes {
                             entries.push((
                                 note.created_at,
@@ -208,7 +177,7 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     .send()
                     .await
                 {
-                    if let Ok(status_changes) = resp.json::<Vec<StatusChange>>().await {
+                    if let Ok(status_changes) = resp.json::<Vec<StatusHistoryResponse>>().await {
                         let mut prev_status: Option<String> = None;
                         // Status history comes in desc order, reverse to get chronological
                         let mut changes: Vec<_> = status_changes.into_iter().collect();

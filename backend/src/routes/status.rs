@@ -7,7 +7,7 @@ use axum::{
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use shared::{ApiError, ChangeStatus};
+use shared::{ApiError, ChangeStatus, StatusChangeResponse, StatusHistoryResponse};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, status_history, users};
@@ -81,16 +81,14 @@ pub async fn history(
 
     let result: Vec<_> = history
         .into_iter()
-        .map(|(h, u)| {
-            serde_json::json!({
-                "id": h.id,
-                "action_item_id": h.action_item_id,
-                "status": h.status,
-                "changed_by_id": h.changed_by_id,
-                "changed_by_name": u.name,
-                "changed_at": h.changed_at,
-                "comment": h.comment,
-            })
+        .map(|(h, u)| StatusHistoryResponse {
+            id: h.id,
+            action_item_id: h.action_item_id,
+            status: h.status,
+            changed_by_id: h.changed_by_id,
+            changed_by_name: u.name,
+            changed_at: h.changed_at,
+            comment: h.comment,
         })
         .collect();
 
@@ -179,14 +177,14 @@ pub async fn change(
 
     (
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": entry.id,
-            "action_item_id": entry.action_item_id,
-            "status": entry.status,
-            "changed_by_id": entry.changed_by_id,
-            "changed_at": entry.changed_at,
-            "comment": entry.comment,
-        })),
+        Json(StatusChangeResponse {
+            id: entry.id,
+            action_item_id: entry.action_item_id,
+            status: entry.status,
+            changed_by_id: entry.changed_by_id,
+            changed_at: entry.changed_at,
+            comment: entry.comment,
+        }),
     )
         .into_response()
 }

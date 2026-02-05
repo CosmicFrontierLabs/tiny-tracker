@@ -1,33 +1,14 @@
 use gloo_net::http::Request;
+use shared::{CategoryResponse, Vendor};
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
-#[derive(Clone, PartialEq, serde::Deserialize)]
-pub struct User {
-    pub id: i32,
-    pub name: String,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-pub struct Vendor {
-    pub id: i32,
-    pub prefix: String,
-    pub name: String,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-pub struct Category {
-    pub id: i32,
-    pub vendor_id: i32,
-    pub name: String,
-}
-
 #[derive(Properties, PartialEq)]
 pub struct NewItemModalProps {
     pub vendors: Vec<Vendor>,
-    pub users: Vec<User>,
-    pub categories: Vec<Category>,
+    pub users: Vec<shared::User>,
+    pub categories: Vec<CategoryResponse>,
     pub on_close: Callback<()>,
     pub on_created: Callback<()>,
 }
@@ -46,7 +27,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
     let adding_category = use_state(|| false);
 
     // Filter categories for current vendor
-    let vendor_categories: Vec<&Category> = props
+    let vendor_categories: Vec<&CategoryResponse> = props
         .categories
         .iter()
         .filter(|c| c.vendor_id == *vendor_id)
@@ -189,7 +170,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
                     .await
                 {
                     Ok(resp) if resp.ok() => {
-                        if let Ok(cat) = resp.json::<Category>().await {
+                        if let Ok(cat) = resp.json::<CategoryResponse>().await {
                             category_id.set(cat.id);
                         }
                         adding_category.set(false);

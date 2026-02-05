@@ -8,7 +8,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use serde::Deserialize;
-use shared::ApiError;
+use shared::{ActionItemResponse, ApiError};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, categories, status_history, users, vendors};
@@ -158,28 +158,32 @@ async fn list_items_internal(
         let creator = users_map.get(&item.created_by_id);
         let owner = users_map.get(&item.owner_id);
 
-        result.push(serde_json::json!({
-            "id": item.id,
-            "vendor_id": item.vendor_id,
-            "number": item.number,
-            "title": item.title,
-            "description": item.description,
-            "create_date": item.create_date,
-            "created_by_id": item.created_by_id,
-            "created_by_name": creator.map(|u| u.name.as_str()).unwrap_or("Unknown"),
-            "created_by_initials": creator.and_then(|u| u.initials.as_deref()),
-            "due_date": item.due_date,
-            "category_id": item.category_id,
-            "category": category.name,
-            "owner_id": item.owner_id,
-            "owner_name": owner.map(|u| u.name.as_str()).unwrap_or("Unknown"),
-            "owner_initials": owner.and_then(|u| u.initials.as_deref()),
-            "priority": item.priority,
-            "created_at": item.created_at,
-            "updated_at": item.updated_at,
-            "status": status,
-            "status_changed_at": status_changed_at,
-        }));
+        result.push(ActionItemResponse {
+            id: item.id,
+            vendor_id: item.vendor_id,
+            number: item.number,
+            title: item.title,
+            description: item.description,
+            create_date: item.create_date,
+            created_by_id: item.created_by_id,
+            created_by_name: creator
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            created_by_initials: creator.and_then(|u| u.initials.clone()),
+            due_date: item.due_date,
+            category_id: item.category_id,
+            category: category.name,
+            owner_id: item.owner_id,
+            owner_name: owner
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            owner_initials: owner.and_then(|u| u.initials.clone()),
+            priority: item.priority,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            status,
+            status_changed_at,
+        });
     }
 
     Json(result).into_response()
@@ -255,28 +259,34 @@ pub async fn get(
         None => ("New".to_string(), item.created_at),
     };
 
-    Json(serde_json::json!({
-        "id": item.id,
-        "vendor_id": item.vendor_id,
-        "number": item.number,
-        "title": item.title,
-        "description": item.description,
-        "create_date": item.create_date,
-        "created_by_id": item.created_by_id,
-        "created_by_name": creator.as_ref().map(|u| u.name.as_str()).unwrap_or("Unknown"),
-        "created_by_initials": creator.as_ref().and_then(|u| u.initials.as_deref()),
-        "due_date": item.due_date,
-        "category_id": item.category_id,
-        "category": category.name,
-        "owner_id": item.owner_id,
-        "owner_name": owner.as_ref().map(|u| u.name.as_str()).unwrap_or("Unknown"),
-        "owner_initials": owner.as_ref().and_then(|u| u.initials.as_deref()),
-        "priority": item.priority,
-        "created_at": item.created_at,
-        "updated_at": item.updated_at,
-        "status": status,
-        "status_changed_at": status_changed_at,
-    }))
+    Json(ActionItemResponse {
+        id: item.id,
+        vendor_id: item.vendor_id,
+        number: item.number,
+        title: item.title,
+        description: item.description,
+        create_date: item.create_date,
+        created_by_id: item.created_by_id,
+        created_by_name: creator
+            .as_ref()
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
+        due_date: item.due_date,
+        category_id: item.category_id,
+        category: category.name,
+        owner_id: item.owner_id,
+        owner_name: owner
+            .as_ref()
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
+        priority: item.priority,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        status,
+        status_changed_at,
+    })
     .into_response()
 }
 
@@ -416,26 +426,50 @@ pub async fn create(
         .execute(&mut conn)
         .await;
 
+    // Fetch creator name for response
+    let creator: Option<User> = users::table
+        .filter(users::id.eq(item.created_by_id))
+        .first(&mut conn)
+        .await
+        .ok();
+
+    // Fetch owner name for response
+    let owner: Option<User> = users::table
+        .filter(users::id.eq(item.owner_id))
+        .first(&mut conn)
+        .await
+        .ok();
+
     (
         StatusCode::CREATED,
-        Json(serde_json::json!({
-            "id": item.id,
-            "vendor_id": item.vendor_id,
-            "number": item.number,
-            "title": item.title,
-            "description": item.description,
-            "create_date": item.create_date,
-            "created_by_id": item.created_by_id,
-            "due_date": item.due_date,
-            "category_id": item.category_id,
-            "category": category.name,
-            "owner_id": item.owner_id,
-            "priority": item.priority,
-            "created_at": item.created_at,
-            "updated_at": item.updated_at,
-            "status": "New",
-            "status_changed_at": item.created_at,
-        })),
+        Json(ActionItemResponse {
+            id: item.id,
+            vendor_id: item.vendor_id,
+            number: item.number,
+            title: item.title,
+            description: item.description,
+            create_date: item.create_date,
+            created_by_id: item.created_by_id,
+            created_by_name: creator
+                .as_ref()
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
+            due_date: item.due_date,
+            category_id: item.category_id,
+            category: category.name,
+            owner_id: item.owner_id,
+            owner_name: owner
+                .as_ref()
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
+            priority: item.priority,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            status: "New".to_string(),
+            status_changed_at: item.created_at,
+        }),
     )
         .into_response()
 }
@@ -533,24 +567,47 @@ pub async fn update(
         None => ("New".to_string(), item.created_at),
     };
 
-    Json(serde_json::json!({
-        "id": item.id,
-        "vendor_id": item.vendor_id,
-        "number": item.number,
-        "title": item.title,
-        "description": item.description,
-        "create_date": item.create_date,
-        "created_by_id": item.created_by_id,
-        "due_date": item.due_date,
-        "category_id": item.category_id,
-        "category": category.name,
-        "owner_id": item.owner_id,
-        "priority": item.priority,
-        "created_at": item.created_at,
-        "updated_at": item.updated_at,
-        "status": status,
-        "status_changed_at": status_changed_at,
-    }))
+    // Fetch creator and owner names
+    let creator: Option<User> = users::table
+        .filter(users::id.eq(item.created_by_id))
+        .first(&mut conn)
+        .await
+        .ok();
+
+    let owner: Option<User> = users::table
+        .filter(users::id.eq(item.owner_id))
+        .first(&mut conn)
+        .await
+        .ok();
+
+    Json(ActionItemResponse {
+        id: item.id,
+        vendor_id: item.vendor_id,
+        number: item.number,
+        title: item.title,
+        description: item.description,
+        create_date: item.create_date,
+        created_by_id: item.created_by_id,
+        created_by_name: creator
+            .as_ref()
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
+        due_date: item.due_date,
+        category_id: item.category_id,
+        category: category.name,
+        owner_id: item.owner_id,
+        owner_name: owner
+            .as_ref()
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
+        priority: item.priority,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        status,
+        status_changed_at,
+    })
     .into_response()
 }
 
