@@ -67,6 +67,9 @@ Action items don't have a `status` column. Current status = most recent entry in
 ### Action item IDs are composite
 Format: `{VENDOR_PREFIX}-{NUMBER}` (e.g. `AD-001`). Generated server-side using the vendor's `next_number` counter.
 
+### API responses use shared types, not `json!`
+Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
+
 ## API Routes
 
 All `/api/*` routes require authentication (JWT cookie).

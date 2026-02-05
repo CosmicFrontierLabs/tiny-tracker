@@ -109,6 +109,7 @@ pub struct Vendor {
     pub description: Option<String>,
     pub next_number: i32,
     pub created_at: DateTime<Utc>,
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +189,7 @@ pub struct CreateVendor {
 pub struct UpdateVendor {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub archived: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -80,6 +80,7 @@ diesel::table! {
         description -> Nullable<Text>,
         next_number -> Int4,
         created_at -> Timestamptz,
+        archived -> Bool,
     }
 }
 
