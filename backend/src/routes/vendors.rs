@@ -1,12 +1,13 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use shared::{ApiError, CreateVendor, UpdateVendor as UpdateVendorReq};
+use serde::Deserialize;
+use shared::{ApiError, CreateVendor, UpdateVendor as UpdateVendorReq, VendorWithCounts};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, vendors};
@@ -15,7 +16,29 @@ use crate::AppState;
 
 use super::AuthUser;
 
-pub async fn list(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl IntoResponse {
+fn to_shared_vendor(v: &Vendor) -> shared::Vendor {
+    shared::Vendor {
+        id: v.id,
+        prefix: v.prefix.clone(),
+        name: v.name.clone(),
+        description: v.description.clone(),
+        next_number: v.next_number,
+        created_at: v.created_at,
+        archived: v.archived,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ListVendorsParams {
+    #[serde(default)]
+    pub include_archived: bool,
+}
+
+pub async fn list(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<ListVendorsParams>,
+    _auth: AuthUser,
+) -> impl IntoResponse {
     let mut conn = match state.pool.get().await {
         Ok(c) => c,
         Err(_) => {
@@ -27,10 +50,11 @@ pub async fn list(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl I
         }
     };
 
-    let vendors_result: Result<Vec<Vendor>, _> = vendors::table
-        .order(vendors::prefix.asc())
-        .load(&mut conn)
-        .await;
+    let mut query = vendors::table.order(vendors::prefix.asc()).into_boxed();
+    if !params.include_archived {
+        query = query.filter(vendors::archived.eq(false));
+    }
+    let vendors_result: Result<Vec<Vendor>, _> = query.load(&mut conn).await;
 
     let all_vendors = match vendors_result {
         Ok(v) => v,
@@ -45,7 +69,7 @@ pub async fn list(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl I
 
     // Build response with counts
     let mut result = Vec::new();
-    for vendor in all_vendors {
+    for vendor in &all_vendors {
         // Get total items count
         let total: i64 = action_items::table
             .filter(action_items::vendor_id.eq(vendor.id))
@@ -57,16 +81,12 @@ pub async fn list(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl I
         // Get open items count - simplified for now
         let open = total; // TODO: Implement proper status filtering
 
-        result.push(serde_json::json!({
-            "id": vendor.id,
-            "prefix": vendor.prefix,
-            "name": vendor.name,
-            "description": vendor.description,
-            "next_number": vendor.next_number,
-            "created_at": vendor.created_at,
-            "open_items": open,
-            "total_items": total,
-        }));
+        result.push(VendorWithCounts {
+            vendor: to_shared_vendor(vendor),
+            open_items: open,
+            total_items: total,
+            last_updated: None,
+        });
     }
 
     Json(result).into_response()
@@ -94,15 +114,7 @@ pub async fn get(
         .await;
 
     match vendor {
-        Ok(v) => Json(serde_json::json!({
-            "id": v.id,
-            "prefix": v.prefix,
-            "name": v.name,
-            "description": v.description,
-            "next_number": v.next_number,
-            "created_at": v.created_at,
-        }))
-        .into_response(),
+        Ok(v) => Json(to_shared_vendor(&v)).into_response(),
         Err(diesel::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(ApiError::not_found(format!("Vendor {} not found", id))),
@@ -172,18 +184,7 @@ pub async fn create(
         .await;
 
     match result {
-        Ok(v) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({
-                "id": v.id,
-                "prefix": v.prefix,
-                "name": v.name,
-                "description": v.description,
-                "next_number": v.next_number,
-                "created_at": v.created_at,
-            })),
-        )
-            .into_response(),
+        Ok(v) => (StatusCode::CREATED, Json(to_shared_vendor(&v))).into_response(),
         Err(diesel::result::Error::DatabaseError(
             diesel::result::DatabaseErrorKind::UniqueViolation,
             _,
@@ -234,6 +235,7 @@ pub async fn update(
     let changeset = UpdateVendor {
         name: payload.name,
         description: payload.description,
+        archived: payload.archived,
     };
 
     let result: Result<Vendor, _> = diesel::update(vendors::table.filter(vendors::id.eq(id)))
@@ -243,15 +245,7 @@ pub async fn update(
         .await;
 
     match result {
-        Ok(v) => Json(serde_json::json!({
-            "id": v.id,
-            "prefix": v.prefix,
-            "name": v.name,
-            "description": v.description,
-            "next_number": v.next_number,
-            "created_at": v.created_at,
-        }))
-        .into_response(),
+        Ok(v) => Json(to_shared_vendor(&v)).into_response(),
         Err(diesel::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(ApiError::not_found(format!("Vendor {} not found", id))),

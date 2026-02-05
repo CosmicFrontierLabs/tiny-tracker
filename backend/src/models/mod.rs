@@ -38,6 +38,7 @@ pub struct Vendor {
     pub description: Option<String>,
     pub next_number: i32,
     pub created_at: DateTime<Utc>,
+    pub archived: bool,
 }
 
 #[derive(Debug, Insertable)]
@@ -53,6 +54,7 @@ pub struct NewVendor {
 pub struct UpdateVendor {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub archived: Option<bool>,
 }
 
 // ============================================================================

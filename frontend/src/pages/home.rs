@@ -6,6 +6,7 @@ use yew::prelude::*;
 use crate::components::Header;
 use crate::pages::item_detail::ItemDetailModal;
 use crate::pages::item_form::{Category, NewItemModal, User, Vendor};
+use crate::pages::manage_vendors::ManageVendorsModal;
 
 #[derive(Clone, PartialEq, serde::Deserialize)]
 struct ActionItemWithStatus {
@@ -63,6 +64,7 @@ pub fn home() -> Html {
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
+    let show_manage_vendors_modal = use_state(|| false);
 
     {
         let items = items.clone();
@@ -159,6 +161,22 @@ pub fn home() -> Html {
         })
     };
 
+    let on_manage_vendors_click = {
+        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
+        Callback::from(move |_| {
+            show_manage_vendors_modal.set(true);
+        })
+    };
+
+    let on_manage_vendors_close = {
+        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            show_manage_vendors_modal.set(false);
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
+
     let priority_class = |priority: &str| -> &'static str {
         match priority {
             "High" => "priority-high",
@@ -229,6 +247,9 @@ pub fn home() -> Html {
                 <div class="page-header">
                     <h2>{ "Action Items" }</h2>
                     <div class="header-actions">
+                        <button type="button" class="btn btn-secondary" onclick={on_manage_vendors_click}>
+                            { "Manage Vendors" }
+                        </button>
                         <button type="button" class="btn btn-primary" onclick={on_new_item_click} disabled={vendors.is_empty()}>
                             { "+ New Item" }
                         </button>
@@ -272,6 +293,10 @@ pub fn home() -> Html {
                     />
                 }
 
+                if *show_manage_vendors_modal {
+                    <ManageVendorsModal on_close={on_manage_vendors_close} />
+                }
+
                 if let Some(item_id) = (*selected_item_id).clone() {
                     <ItemDetailModal
                         item_id={item_id}
@@ -284,7 +309,7 @@ pub fn home() -> Html {
                 } else if let Some(err) = (*error).clone() {
                     <p class="error">{ err }</p>
                 } else if vendors.is_empty() {
-                    <p>{ "No vendors configured. Use the CLI to add vendors first." }</p>
+                    <p>{ "No vendors configured. Click 'Manage Vendors' to add one." }</p>
                 } else if items.is_empty() {
                     <p>{ "No action items yet. Click '+ New Item' to create one." }</p>
                 } else if filtered_items.is_empty() {

@@ -749,3 +749,48 @@ main {
 .login-button:hover {
     background: #2980b9;
 }
+
+/* Vendor management */
+.vendor-archived {
+    opacity: 0.5;
+}
+
+.vendor-archived td {
+    color: #999;
+}
+
+.btn-danger {
+    background: #e74c3c;
+    border-color: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c0392b;
+}
+
+.btn-success {
+    background: #27ae60;
+    border-color: #27ae60;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #219a52;
+}
+
+.add-vendor-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.add-vendor-form .form-group {
+    margin-bottom: 0;
+}
+
+.manage-vendors-list {
+    margin-top: 1rem;
+}
