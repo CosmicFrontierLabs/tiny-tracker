@@ -823,7 +823,7 @@ main {
 /* Home page layout with sidebar */
 .home-layout {
     display: flex;
-    gap: 1.5rem;
+    gap: 2.5rem;
     align-items: flex-start;
 }
 
