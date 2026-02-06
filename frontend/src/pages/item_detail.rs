@@ -2,10 +2,12 @@ use chrono::{DateTime, NaiveDate, Utc};
 use gloo_net::http::Request;
 use js_sys::{Date, Object, Reflect};
 use regex::Regex;
-use shared::{ActionItemResponse, NoteResponse, StatusHistoryResponse};
+use shared::{ActionItemResponse, CategoryResponse, NoteResponse, StatusHistoryResponse};
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
+
+use crate::components::DateInput;
 
 // (display_name, api_value)
 const STATUSES: &[(&str, &str)] = &[
@@ -45,6 +47,7 @@ enum HistoryEntry {
 pub struct ItemDetailModalProps {
     pub item_id: String,
     pub users: Vec<shared::User>,
+    pub categories: Vec<CategoryResponse>,
     pub on_close: Callback<()>,
 }
 
@@ -117,6 +120,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let changing_status = use_state(|| false);
     let changing_owner = use_state(|| false);
     let changing_priority = use_state(|| false);
+    let changing_due_date = use_state(|| false);
+    let changing_category = use_state(|| false);
 
     // Editing states
     let editing_title = use_state(|| false);
@@ -586,6 +591,87 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
         })
     };
 
+    // Due date change handler
+    let on_due_date_change = {
+        let changing_due_date = changing_due_date.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |val: Option<String>| {
+            let changing_due_date = changing_due_date.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            changing_due_date.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = match val {
+                    Some(d) => serde_json::json!({ "due_date": d }),
+                    None => serde_json::json!({ "due_date": null }),
+                };
+
+                match Request::patch(&format!("/api/items/{}", item_id))
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.ok() => {
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                    _ => {}
+                }
+                changing_due_date.set(false);
+            });
+        })
+    };
+
+    // Category change handler
+    let on_category_change = {
+        let item = item.clone();
+        let changing_category = changing_category.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            let new_category_id: i32 = match select.value().parse() {
+                Ok(id) => id,
+                Err(_) => return,
+            };
+            let current_category_id = (*item).as_ref().map(|i| i.category_id).unwrap_or(0);
+
+            if new_category_id == current_category_id {
+                return;
+            }
+
+            let changing_category = changing_category.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            changing_category.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = serde_json::json!({
+                    "category_id": new_category_id,
+                });
+
+                match Request::patch(&format!("/api/items/{}", item_id))
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.ok() => {
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                    _ => {}
+                }
+                changing_category.set(false);
+            });
+        })
+    };
+
     let priority_class = |priority: &str| -> &'static str {
         match priority {
             "High" => "priority-high",
@@ -651,10 +737,35 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 <strong>{ "Created: " }</strong>{ format_naive_date(&i.create_date) }
                             </span>
                             <span class="meta-item">
-                                <strong>{ "Due: " }</strong>{ i.due_date.as_ref().map(format_naive_date).unwrap_or_else(|| "TBD".to_string()) }
+                                <strong>{ "Due: " }</strong>
+                                <DateInput
+                                    value={i.due_date.map(|d| d.format("%Y-%m-%d").to_string())}
+                                    onchange={on_due_date_change}
+                                    disabled={*changing_due_date}
+                                />
+                                if *changing_due_date {
+                                    <span class="saving-indicator">{ " (saving...)" }</span>
+                                }
                             </span>
                             <span class="meta-item">
-                                <strong>{ "Category: " }</strong>{ &i.category }
+                                <strong>{ "Category: " }</strong>
+                                <select
+                                    class="category-select"
+                                    onchange={on_category_change}
+                                    disabled={*changing_category}
+                                >
+                                    { for props.categories.iter()
+                                        .filter(|c| c.vendor_id == i.vendor_id)
+                                        .map(|c| {
+                                            html! {
+                                                <option value={c.id.to_string()} selected={c.id == i.category_id}>{ &c.name }</option>
+                                            }
+                                        })
+                                    }
+                                </select>
+                                if *changing_category {
+                                    <span class="saving-indicator">{ " (saving...)" }</span>
+                                }
                             </span>
                             <span class="meta-item">
                                 <strong>{ "Priority: " }</strong>

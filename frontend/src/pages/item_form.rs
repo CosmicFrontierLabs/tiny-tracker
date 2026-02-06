@@ -4,6 +4,8 @@ use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlSelectElement};
 use yew::prelude::*;
 
+use crate::components::DateInput;
+
 #[derive(Properties, PartialEq)]
 pub struct NewItemModalProps {
     pub vendors: Vec<Vendor>,
@@ -60,9 +62,8 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
 
     let on_due_date_change = {
         let due_date = due_date.clone();
-        Callback::from(move |e: InputEvent| {
-            let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
-            due_date.set(input.value());
+        Callback::from(move |val: Option<String>| {
+            due_date.set(val.unwrap_or_default());
         })
     };
 
@@ -297,15 +298,12 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
                         />
                     </div>
 
-                    <div class="form-group">
-                        <label for="due_date">{ "Due Date (optional)" }</label>
-                        <input
-                            type="date"
-                            id="due_date"
-                            value={(*due_date).clone()}
-                            oninput={on_due_date_change}
-                        />
-                    </div>
+                    <DateInput
+                        label={"Due Date (optional)"}
+                        value={if due_date.is_empty() { None } else { Some((*due_date).clone()) }}
+                        onchange={on_due_date_change}
+                        id={"due_date"}
+                    />
 
                     <div class="form-group">
                         <label for="category">{ "Category" }</label>

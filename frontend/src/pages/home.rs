@@ -292,6 +292,7 @@ pub fn home() -> Html {
                     <ItemDetailModal
                         item_id={item_id}
                         users={(*users).clone()}
+                        categories={(*categories).clone()}
                         on_close={on_item_detail_close}
                     />
                 }
