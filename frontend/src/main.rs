@@ -9,6 +9,8 @@ mod pages;
 pub enum Route {
     #[at("/")]
     Home,
+    #[at("/items/:id")]
+    Item { id: String },
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -17,6 +19,7 @@ pub enum Route {
 fn switch(routes: Route) -> Html {
     match routes {
         Route::Home => html! { <pages::home::Home /> },
+        Route::Item { id } => html! { <pages::home::Home initial_item_id={id} /> },
         Route::NotFound => html! { <pages::home::Home /> },
     }
 }
