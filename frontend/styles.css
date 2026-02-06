@@ -436,6 +436,9 @@ main {
 }
 
 .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
     white-space: nowrap;
 }
 
@@ -601,8 +604,12 @@ main {
     cursor: default;
 }
 
-/* Status dropdown in modal */
-.status-select {
+/* Inline controls in modal meta section */
+.status-select,
+.category-select,
+.owner-select,
+.priority-select,
+.inline-date-input {
     padding: 0.25rem 0.5rem;
     border: 1px solid #ccc;
     border-radius: 4px;
@@ -612,12 +619,20 @@ main {
     background: white;
 }
 
-.status-select:focus {
+.status-select:focus,
+.category-select:focus,
+.owner-select:focus,
+.priority-select:focus,
+.inline-date-input:focus {
     outline: none;
     border-color: #3498db;
 }
 
-.status-select:disabled {
+.status-select:disabled,
+.category-select:disabled,
+.owner-select:disabled,
+.priority-select:disabled,
+.inline-date-input:disabled {
     opacity: 0.7;
     cursor: wait;
 }
