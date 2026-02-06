@@ -47,6 +47,7 @@ pub fn home() -> Html {
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
+    let filter_status = use_state(|| "active".to_string()); // "all", "active" (hides Complete), or a specific status
     let show_manage_vendors_modal = use_state(|| false);
 
     {
@@ -214,7 +215,16 @@ pub fn home() -> Html {
         })
     };
 
+    let on_status_filter_change = {
+        let filter_status = filter_status.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            filter_status.set(select.value());
+        })
+    };
+
     // Apply filters to items
+    let status_filter_val = (*filter_status).clone();
     let filtered_items: Vec<_> = items
         .iter()
         .filter(|item| {
@@ -226,7 +236,12 @@ pub fn home() -> Html {
                 .as_ref()
                 .map(|o| item.owner_id == *o)
                 .unwrap_or(true);
-            vendor_match && owner_match
+            let status_match = match status_filter_val.as_str() {
+                "all" => true,
+                "active" => item.status != "Complete",
+                specific => item.status == specific,
+            };
+            vendor_match && owner_match && status_match
         })
         .collect();
 
@@ -269,6 +284,19 @@ pub fn home() -> Html {
                                     <option value={u.id.to_string()} selected={selected}>{ &u.name }</option>
                                 }
                             })}
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>{ "Status:" }</label>
+                        <select onchange={on_status_filter_change}>
+                            <option value="active" selected={*filter_status == "active"}>{ "Active (hide completed)" }</option>
+                            <option value="all" selected={*filter_status == "all"}>{ "All Statuses" }</option>
+                            <option value="New" selected={*filter_status == "New"}>{ "New" }</option>
+                            <option value="Not Started" selected={*filter_status == "Not Started"}>{ "Not Started" }</option>
+                            <option value="In Progress" selected={*filter_status == "In Progress"}>{ "In Progress" }</option>
+                            <option value="TBC" selected={*filter_status == "TBC"}>{ "TBC" }</option>
+                            <option value="Complete" selected={*filter_status == "Complete"}>{ "Complete" }</option>
+                            <option value="Blocked" selected={*filter_status == "Blocked"}>{ "Blocked" }</option>
                         </select>
                     </div>
                 </div>
