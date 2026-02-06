@@ -1,8 +1,48 @@
+use std::cmp::Ordering;
+
 use gloo_net::http::Request;
 use shared::{ActionItemResponse, CategoryResponse, Vendor};
 use wasm_bindgen::JsCast;
 use web_sys::HtmlSelectElement;
 use yew::prelude::*;
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortColumn {
+    Id,
+    Title,
+    Category,
+    Priority,
+    Status,
+    Created,
+    DueDate,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortDirection {
+    Asc,
+    Desc,
+}
+
+fn priority_ord(p: &str) -> u8 {
+    match p {
+        "High" => 0,
+        "Medium" => 1,
+        "Low" => 2,
+        _ => 3,
+    }
+}
+
+fn status_ord(s: &str) -> u8 {
+    match s {
+        "New" => 0,
+        "Not Started" => 1,
+        "In Progress" => 2,
+        "TBC" => 3,
+        "Blocked" => 4,
+        "Complete" => 5,
+        _ => 6,
+    }
+}
 
 use crate::components::Header;
 use crate::pages::item_detail::ItemDetailModal;
@@ -48,6 +88,8 @@ pub fn home() -> Html {
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
     let show_manage_vendors_modal = use_state(|| false);
+    let sort_column = use_state(|| SortColumn::Created);
+    let sort_direction = use_state(|| SortDirection::Desc);
 
     {
         let items = items.clone();
@@ -214,8 +256,35 @@ pub fn home() -> Html {
         })
     };
 
-    // Apply filters to items
-    let filtered_items: Vec<_> = items
+    let on_sort = {
+        let sort_column = sort_column.clone();
+        let sort_direction = sort_direction.clone();
+        Callback::from(move |col: SortColumn| {
+            if *sort_column == col {
+                sort_direction.set(match *sort_direction {
+                    SortDirection::Asc => SortDirection::Desc,
+                    SortDirection::Desc => SortDirection::Asc,
+                });
+            } else {
+                sort_column.set(col);
+                sort_direction.set(SortDirection::Asc);
+            }
+        })
+    };
+
+    let sort_indicator = |col: SortColumn| -> &'static str {
+        if *sort_column == col {
+            match *sort_direction {
+                SortDirection::Asc => " ↑",
+                SortDirection::Desc => " ↓",
+            }
+        } else {
+            ""
+        }
+    };
+
+    // Apply filters and sorting to items
+    let mut filtered_items: Vec<_> = items
         .iter()
         .filter(|item| {
             let vendor_match = filter_vendor_id
@@ -229,6 +298,29 @@ pub fn home() -> Html {
             vendor_match && owner_match
         })
         .collect();
+
+    let col = *sort_column;
+    let dir = *sort_direction;
+    filtered_items.sort_by(|a, b| {
+        let ord = match col {
+            SortColumn::Id => a.id.cmp(&b.id),
+            SortColumn::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+            SortColumn::Category => a.category.cmp(&b.category),
+            SortColumn::Priority => priority_ord(&a.priority).cmp(&priority_ord(&b.priority)),
+            SortColumn::Status => status_ord(&a.status).cmp(&status_ord(&b.status)),
+            SortColumn::Created => a.create_date.cmp(&b.create_date),
+            SortColumn::DueDate => match (&a.due_date, &b.due_date) {
+                (Some(a_d), Some(b_d)) => a_d.cmp(b_d),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+        };
+        match dir {
+            SortDirection::Asc => ord,
+            SortDirection::Desc => ord.reverse(),
+        }
+    });
 
     html! {
         <>
@@ -310,15 +402,35 @@ pub fn home() -> Html {
                     <table class="table items-table">
                         <thead>
                             <tr>
-                                <th>{ "ID" }</th>
-                                <th>{ "Title" }</th>
-                                <th>{ "Category" }</th>
+                                { for [
+                                    ("ID", SortColumn::Id),
+                                    ("Title", SortColumn::Title),
+                                    ("Category", SortColumn::Category),
+                                ].iter().map(|(label, col)| {
+                                    let col = *col;
+                                    let on_sort = on_sort.clone();
+                                    html! {
+                                        <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                            { label }{ sort_indicator(col) }
+                                        </th>
+                                    }
+                                })}
                                 <th>{ "Creator" }</th>
                                 <th>{ "Owner" }</th>
-                                <th>{ "Priority" }</th>
-                                <th>{ "Status" }</th>
-                                <th>{ "Created" }</th>
-                                <th>{ "Due Date" }</th>
+                                { for [
+                                    ("Priority", SortColumn::Priority),
+                                    ("Status", SortColumn::Status),
+                                    ("Created", SortColumn::Created),
+                                    ("Due Date", SortColumn::DueDate),
+                                ].iter().map(|(label, col)| {
+                                    let col = *col;
+                                    let on_sort = on_sort.clone();
+                                    html! {
+                                        <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                            { label }{ sort_indicator(col) }
+                                        </th>
+                                    }
+                                })}
                             </tr>
                         </thead>
                         <tbody>
