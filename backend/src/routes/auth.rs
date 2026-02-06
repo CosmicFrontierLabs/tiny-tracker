@@ -8,6 +8,7 @@ use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use jsonwebtoken::{encode, EncodingKey, Header};
+use rand::Rng;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -20,7 +21,6 @@ use super::{AuthUser, Claims};
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
     pub code: String,
-    #[allow(dead_code)]
     pub state: Option<String>,
 }
 
@@ -47,24 +47,71 @@ pub async fn login(State(state): State<Arc<AppState>>) -> Response {
     };
 
     let redirect_uri = format!("{}/auth/callback", state.config.public_url);
+
+    let oauth_state: String = rand::rng()
+        .sample_iter(rand::distr::Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
+
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?\
         client_id={}&\
         redirect_uri={}&\
         response_type=code&\
         scope=email%20profile&\
-        access_type=offline",
+        access_type=offline&\
+        state={}",
         client_id,
-        urlencoding::encode(&redirect_uri)
+        urlencoding::encode(&redirect_uri),
+        urlencoding::encode(&oauth_state)
     );
 
-    Redirect::to(&auth_url).into_response()
+    let secure = if state.config.public_url.starts_with("https://") {
+        "; Secure"
+    } else {
+        ""
+    };
+    let state_cookie = format!(
+        "oauth_state={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600{}",
+        oauth_state, secure
+    );
+
+    (
+        StatusCode::FOUND,
+        [
+            (header::SET_COOKIE, state_cookie),
+            (header::LOCATION, auth_url),
+        ],
+    )
+        .into_response()
 }
 
 pub async fn callback(
     State(state): State<Arc<AppState>>,
     Query(query): Query<CallbackQuery>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
+    if !state.config.dev_mode {
+        // Validate OAuth state parameter
+        let cookie_header = headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        let stored_state = cookie_header.split(';').find_map(|cookie| {
+            let cookie = cookie.trim();
+            cookie.strip_prefix("oauth_state=").map(|v| v.to_string())
+        });
+
+        match (&stored_state, &query.state) {
+            (Some(stored), Some(received)) if stored == received => {}
+            _ => {
+                return (StatusCode::BAD_REQUEST, "Invalid OAuth state parameter").into_response();
+            }
+        }
+    }
+
     if state.config.dev_mode {
         // Dev mode: create a token for the dev user
         let mut conn = match state.pool.get().await {
@@ -97,7 +144,7 @@ pub async fn callback(
         };
 
         let token = create_jwt(&state.config.jwt_secret, &dev_user);
-        return set_token_cookie_and_redirect(token);
+        return set_token_cookie_and_redirect(token, &state.config.public_url);
     }
 
     // Exchange code for token
@@ -237,7 +284,7 @@ pub async fn callback(
     };
 
     let token = create_jwt(&state.config.jwt_secret, &user);
-    set_token_cookie_and_redirect(token)
+    set_token_cookie_and_redirect(token, &state.config.public_url)
 }
 
 pub async fn logout() -> Response {
@@ -280,10 +327,15 @@ fn create_jwt(secret: &str, user: &User) -> String {
     .expect("Failed to create JWT")
 }
 
-fn set_token_cookie_and_redirect(token: String) -> Response {
+fn set_token_cookie_and_redirect(token: String, public_url: &str) -> Response {
+    let secure = if public_url.starts_with("https://") {
+        "; Secure"
+    } else {
+        ""
+    };
     let cookie = format!(
-        "token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400",
-        token
+        "token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400{}",
+        token, secure
     );
     (
         StatusCode::FOUND,
