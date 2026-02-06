@@ -44,7 +44,7 @@ fn status_ord(s: &str) -> u8 {
     }
 }
 
-use crate::components::Header;
+use crate::components::{ActivitySidebar, Header};
 use crate::pages::item_detail::ItemDetailModal;
 use crate::pages::item_form::NewItemModal;
 use crate::pages::manage_vendors::ManageVendorsModal;
@@ -272,6 +272,13 @@ pub fn home() -> Html {
         })
     };
 
+    let on_activity_select = {
+        let selected_item_id = selected_item_id.clone();
+        Callback::from(move |item_id: String| {
+            selected_item_id.set(Some(item_id));
+        })
+    };
+
     let sort_indicator = |col: SortColumn| -> &'static str {
         if *sort_column == col {
             match *sort_direction {
@@ -389,98 +396,108 @@ pub fn home() -> Html {
                     />
                 }
 
-                if *loading {
-                    <p>{ "Loading..." }</p>
-                } else if let Some(err) = (*error).clone() {
-                    <p class="error">{ err }</p>
-                } else if vendors.is_empty() {
-                    <p>{ "No vendors configured. Click 'Manage Vendors' to add one." }</p>
-                } else if items.is_empty() {
-                    <p>{ "No action items yet. Click '+ New Item' to create one." }</p>
-                } else if filtered_items.is_empty() {
-                    <p>{ "No items match the current filters." }</p>
-                } else {
-                    <table class="table items-table">
-                        <thead>
-                            <tr>
-                                { for [
-                                    ("ID", SortColumn::Id),
-                                    ("Title", SortColumn::Title),
-                                    ("Category", SortColumn::Category),
-                                ].iter().map(|(label, col)| {
-                                    let col = *col;
-                                    let on_sort = on_sort.clone();
-                                    html! {
-                                        <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
-                                            { label }{ sort_indicator(col) }
-                                        </th>
-                                    }
-                                })}
-                                <th>{ "Creator" }</th>
-                                <th>{ "Owner" }</th>
-                                { for [
-                                    ("Priority", SortColumn::Priority),
-                                    ("Status", SortColumn::Status),
-                                    ("Created", SortColumn::Created),
-                                    ("Due Date", SortColumn::DueDate),
-                                ].iter().map(|(label, col)| {
-                                    let col = *col;
-                                    let on_sort = on_sort.clone();
-                                    html! {
-                                        <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
-                                            { label }{ sort_indicator(col) }
-                                        </th>
-                                    }
-                                })}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            { for filtered_items.iter().map(|item| {
-                                let item_id = item.id.clone();
-                                let selected_item_id = selected_item_id.clone();
-                                let on_row_click = {
-                                    let item_id = item_id.clone();
-                                    Callback::from(move |_| {
-                                        selected_item_id.set(Some(item_id.clone()));
-                                    })
-                                };
-                                let creator_initials = get_initials(&item.created_by_name, item.created_by_initials.as_deref());
-                                let creator_color = name_to_color(&item.created_by_name);
-                                let owner_initials = get_initials(&item.owner_name, item.owner_initials.as_deref());
-                                let owner_color = name_to_color(&item.owner_name);
-                                html! {
-                                    <tr class="clickable-row" onclick={on_row_click}>
-                                        <td>
-                                            <span class="item-id">{ &item.id }</span>
-                                        </td>
-                                        <td class="item-title">{ &item.title }</td>
-                                        <td>{ &item.category }</td>
-                                        <td>
-                                            <span class="user-avatar" style={format!("background-color: {}", creator_color)} title={item.created_by_name.clone()}>
-                                                { creator_initials }
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="user-avatar" style={format!("background-color: {}", owner_color)} title={item.owner_name.clone()}>
-                                                { owner_initials }
-                                            </span>
-                                        </td>
-                                        <td class={priority_class(&item.priority)}>
-                                            { &item.priority }
-                                        </td>
-                                        <td class={status_class(&item.status)}>
-                                            { &item.status }
-                                        </td>
-                                        <td>{ item.create_date.to_string() }</td>
-                                        <td>
-                                            { item.due_date.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string()) }
-                                        </td>
+                <div class="home-layout">
+                    <div class="home-main">
+                        if *loading {
+                            <p>{ "Loading..." }</p>
+                        } else if let Some(err) = (*error).clone() {
+                            <p class="error">{ err }</p>
+                        } else if vendors.is_empty() {
+                            <p>{ "No vendors configured. Click 'Manage Vendors' to add one." }</p>
+                        } else if items.is_empty() {
+                            <p>{ "No action items yet. Click '+ New Item' to create one." }</p>
+                        } else if filtered_items.is_empty() {
+                            <p>{ "No items match the current filters." }</p>
+                        } else {
+                            <table class="table items-table">
+                                <thead>
+                                    <tr>
+                                        { for [
+                                            ("ID", SortColumn::Id),
+                                            ("Title", SortColumn::Title),
+                                            ("Category", SortColumn::Category),
+                                        ].iter().map(|(label, col)| {
+                                            let col = *col;
+                                            let on_sort = on_sort.clone();
+                                            html! {
+                                                <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                                    { label }{ sort_indicator(col) }
+                                                </th>
+                                            }
+                                        })}
+                                        <th>{ "Creator" }</th>
+                                        <th>{ "Owner" }</th>
+                                        { for [
+                                            ("Priority", SortColumn::Priority),
+                                            ("Status", SortColumn::Status),
+                                            ("Created", SortColumn::Created),
+                                            ("Due Date", SortColumn::DueDate),
+                                        ].iter().map(|(label, col)| {
+                                            let col = *col;
+                                            let on_sort = on_sort.clone();
+                                            html! {
+                                                <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                                    { label }{ sort_indicator(col) }
+                                                </th>
+                                            }
+                                        })}
                                     </tr>
-                                }
-                            })}
-                        </tbody>
-                    </table>
-                }
+                                </thead>
+                                <tbody>
+                                    { for filtered_items.iter().map(|item| {
+                                        let item_id = item.id.clone();
+                                        let selected_item_id = selected_item_id.clone();
+                                        let on_row_click = {
+                                            let item_id = item_id.clone();
+                                            Callback::from(move |_| {
+                                                selected_item_id.set(Some(item_id.clone()));
+                                            })
+                                        };
+                                        let creator_initials = get_initials(&item.created_by_name, item.created_by_initials.as_deref());
+                                        let creator_color = name_to_color(&item.created_by_name);
+                                        let owner_initials = get_initials(&item.owner_name, item.owner_initials.as_deref());
+                                        let owner_color = name_to_color(&item.owner_name);
+                                        html! {
+                                            <tr class="clickable-row" onclick={on_row_click}>
+                                                <td>
+                                                    <span class="item-id">{ &item.id }</span>
+                                                </td>
+                                                <td class="item-title">{ &item.title }</td>
+                                                <td>{ &item.category }</td>
+                                                <td>
+                                                    <span class="user-avatar" style={format!("background-color: {}", creator_color)} title={item.created_by_name.clone()}>
+                                                        { creator_initials }
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="user-avatar" style={format!("background-color: {}", owner_color)} title={item.owner_name.clone()}>
+                                                        { owner_initials }
+                                                    </span>
+                                                </td>
+                                                <td class={priority_class(&item.priority)}>
+                                                    { &item.priority }
+                                                </td>
+                                                <td class={status_class(&item.status)}>
+                                                    { &item.status }
+                                                </td>
+                                                <td>{ item.create_date.to_string() }</td>
+                                                <td>
+                                                    { item.due_date.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string()) }
+                                                </td>
+                                            </tr>
+                                        }
+                                    })}
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                    <aside class="home-sidebar">
+                        <ActivitySidebar
+                            on_select_item={on_activity_select}
+                            refresh_trigger={*refresh_trigger}
+                        />
+                    </aside>
+                </div>
             </main>
         </>
     }

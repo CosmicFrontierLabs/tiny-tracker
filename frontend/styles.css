@@ -819,3 +819,130 @@ main {
 .manage-vendors-list {
     margin-top: 1rem;
 }
+
+/* Home page layout with sidebar */
+.home-layout {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.home-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.home-sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+}
+
+/* Activity sidebar */
+.activity-sidebar {
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+}
+
+.activity-sidebar h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.activity-count {
+    background: #3498db;
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.activity-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.activity-entry {
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.1s;
+}
+
+.activity-entry:last-child {
+    border-bottom: none;
+}
+
+.activity-entry:hover {
+    background: #e8f4fc;
+}
+
+.activity-entry.activity-type-note {
+    border-left: 3px solid #3498db;
+}
+
+.activity-entry.activity-type-status {
+    border-left: 3px solid #9b59b6;
+}
+
+.activity-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.15rem;
+}
+
+.activity-item-id {
+    color: #3498db;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.activity-time {
+    color: #999;
+    font-size: 0.75rem;
+}
+
+.activity-actor {
+    font-size: 0.85rem;
+    color: #2c3e50;
+}
+
+.activity-detail {
+    font-size: 0.8rem;
+    color: #666;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 0.15rem;
+}
+
+.activity-empty {
+    color: #999;
+    font-style: italic;
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 1rem 0;
+}
+
+@media (max-width: 1000px) {
+    .home-layout {
+        flex-direction: column;
+    }
+    .home-sidebar {
+        width: 100%;
+        position: static;
+        max-height: none;
+    }
+}
