@@ -298,6 +298,16 @@ main {
 }
 
 /* Items table */
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.sortable-header:hover {
+    background: #e8f4fc;
+}
+
 .items-table .item-title {
     max-width: 300px;
     overflow: hidden;
