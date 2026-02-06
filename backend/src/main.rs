@@ -18,7 +18,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use routes::{auth, categories, health, items, notes, status, users, vendors};
+use routes::{activity, auth, categories, health, items, notes, status, users, vendors};
 
 pub type DbPool = Pool<AsyncPgConnection>;
 
@@ -185,6 +185,8 @@ async fn main() -> anyhow::Result<()> {
             "/api/vendors/:id/categories",
             get(categories::list_by_vendor).post(categories::create),
         )
+        // Activity feed
+        .route("/api/activity", get(activity::activity))
         // Deep link redirect
         .route("/go/:item_id", get(items::go_redirect))
         // Static files (frontend) - fallback for everything else

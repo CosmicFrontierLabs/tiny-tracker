@@ -357,6 +357,23 @@ pub struct StatusHistoryResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityEventType {
+    NoteAdded,
+    StatusChanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    pub timestamp: DateTime<Utc>,
+    pub item_id: String,
+    pub item_title: String,
+    pub actor_name: String,
+    pub event_type: ActivityEventType,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusChangeResponse {
     pub id: i32,
     pub action_item_id: String,
