@@ -14,7 +14,7 @@ use diesel_async::AsyncPgConnection;
 use futures_util::FutureExt;
 use rustls_platform_verifier::ConfigVerifierExt;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -189,12 +189,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/go/:item_id", get(items::go_redirect))
         // Static files (frontend) - fallback for everything else
         .fallback(static_files::static_handler)
-        .layer(
+        .layer({
+            let origin = config
+                .public_url
+                .parse::<axum::http::HeaderValue>()
+                .expect("PUBLIC_URL must be a valid header value");
             CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+                .allow_origin(origin)
+                .allow_methods([
+                    axum::http::Method::GET,
+                    axum::http::Method::POST,
+                    axum::http::Method::PATCH,
+                ])
+                .allow_headers([axum::http::header::CONTENT_TYPE])
+        })
         .layer(TraceLayer::new_for_http())
         .with_state(Arc::new(state));
 

@@ -611,6 +611,36 @@ pub async fn update(
     .into_response()
 }
 
-pub async fn go_redirect(Path(item_id): Path<String>) -> Redirect {
-    Redirect::to(&format!("/items/{}", item_id))
+pub async fn go_redirect(
+    State(state): State<Arc<AppState>>,
+    Path(item_id): Path<String>,
+    _auth: AuthUser,
+) -> Response {
+    let mut conn = match state.pool.get().await {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::internal_error("Database connection failed")),
+            )
+                .into_response()
+        }
+    };
+
+    let exists: bool = action_items::table
+        .filter(action_items::id.eq(&item_id))
+        .select(action_items::id)
+        .first::<String>(&mut conn)
+        .await
+        .is_ok();
+
+    if !exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiError::not_found(format!("Item {} not found", item_id))),
+        )
+            .into_response();
+    }
+
+    Redirect::to(&format!("/items/{}", item_id)).into_response()
 }
