@@ -88,6 +88,7 @@ pub fn home() -> Html {
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
     let show_manage_vendors_modal = use_state(|| false);
+    let show_completed = use_state(|| false);
     let sort_column = use_state(|| SortColumn::Created);
     let sort_direction = use_state(|| SortDirection::Desc);
 
@@ -302,7 +303,8 @@ pub fn home() -> Html {
                 .as_ref()
                 .map(|o| item.owner_id == *o)
                 .unwrap_or(true);
-            vendor_match && owner_match
+            let completed_match = *show_completed || item.status != "Complete";
+            vendor_match && owner_match && completed_match
         })
         .collect();
 
@@ -369,6 +371,21 @@ pub fn home() -> Html {
                                 }
                             })}
                         </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="checkbox-label">
+                            <input
+                                type="checkbox"
+                                checked={*show_completed}
+                                onchange={{
+                                    let show_completed = show_completed.clone();
+                                    Callback::from(move |_: Event| {
+                                        show_completed.set(!*show_completed);
+                                    })
+                                }}
+                            />
+                            { " Show Completed" }
+                        </label>
                     </div>
                 </div>
 
