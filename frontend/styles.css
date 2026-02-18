@@ -11,8 +11,8 @@ body {
 }
 
 .container {
-    width: 71.43%; /* 5/7 of viewport */
-    max-width: 1400px;
+    width: 90%;
+    max-width: 1600px;
     margin: 0 auto;
     padding: 0 20px;
 }
@@ -26,8 +26,8 @@ body {
 }
 
 .header nav {
-    width: 71.43%;
-    max-width: 1400px;
+    width: 90%;
+    max-width: 1600px;
     margin: 0 auto;
     padding: 0 20px;
     display: flex;
@@ -853,10 +853,11 @@ main {
 .home-main {
     flex: 1;
     min-width: 0;
+    overflow-x: auto;
 }
 
 .home-sidebar {
-    width: 300px;
+    width: 250px;
     flex-shrink: 0;
     position: sticky;
     top: 1rem;
@@ -870,6 +871,18 @@ main {
     border-radius: 4px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     padding: 1rem;
+}
+
+.activity-mobile {
+    display: none;
+}
+
+.activity-mobile summary {
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    list-style: revert;
 }
 
 .activity-sidebar h3 {
@@ -1003,10 +1016,6 @@ main {
         min-width: 0;
     }
 
-    .home-main {
-        overflow-x: auto;
-    }
-
     .table {
         font-size: 0.85rem;
     }
@@ -1054,5 +1063,13 @@ main {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.25rem;
+    }
+
+    .activity-desktop {
+        display: none;
+    }
+
+    .activity-mobile {
+        display: block;
     }
 }
