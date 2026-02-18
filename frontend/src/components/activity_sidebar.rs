@@ -69,57 +69,76 @@ pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
 
     let entry_count = entries.len();
 
+    let activity_content = if *loading {
+        html! { <p class="activity-empty">{ "Loading..." }</p> }
+    } else if entries.is_empty() {
+        html! { <p class="activity-empty">{ "No new activity." }</p> }
+    } else {
+        html! {
+            <ul class="activity-list">
+                { for entries.iter().map(|entry| {
+                    let item_id = entry.item_id.clone();
+                    let on_click = {
+                        let on_select = props.on_select_item.clone();
+                        let id = item_id.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            on_select.emit(id.clone());
+                        })
+                    };
+
+                    let type_class = match entry.event_type {
+                        ActivityEventType::NoteAdded => "activity-type-note",
+                        ActivityEventType::StatusChanged => "activity-type-status",
+                    };
+
+                    let type_label = match entry.event_type {
+                        ActivityEventType::NoteAdded => "added a note",
+                        ActivityEventType::StatusChanged => "changed status",
+                    };
+
+                    html! {
+                        <li class={classes!("activity-entry", type_class)} onclick={on_click}>
+                            <div class="activity-entry-header">
+                                <span class="activity-item-id">{ &entry.item_id }</span>
+                                <span class="activity-time">{ format_relative_time(&entry.timestamp) }</span>
+                            </div>
+                            <div class="activity-actor">
+                                { &entry.actor_name }
+                                { " " }
+                                { type_label }
+                            </div>
+                            <div class="activity-detail">{ &entry.detail }</div>
+                        </li>
+                    }
+                })}
+            </ul>
+        }
+    };
+
+    let count_badge = if entry_count > 0 {
+        html! { <span class="activity-count">{ entry_count }</span> }
+    } else {
+        html! {}
+    };
+
     html! {
         <div class="activity-sidebar">
-            <h3>
-                { "Recent Activity" }
-                if entry_count > 0 {
-                    <span class="activity-count">{ entry_count }</span>
-                }
-            </h3>
-            if *loading {
-                <p class="activity-empty">{ "Loading..." }</p>
-            } else if entries.is_empty() {
-                <p class="activity-empty">{ "No new activity." }</p>
-            } else {
-                <ul class="activity-list">
-                    { for entries.iter().map(|entry| {
-                        let item_id = entry.item_id.clone();
-                        let on_click = {
-                            let on_select = props.on_select_item.clone();
-                            let id = item_id.clone();
-                            Callback::from(move |_: MouseEvent| {
-                                on_select.emit(id.clone());
-                            })
-                        };
-
-                        let type_class = match entry.event_type {
-                            ActivityEventType::NoteAdded => "activity-type-note",
-                            ActivityEventType::StatusChanged => "activity-type-status",
-                        };
-
-                        let type_label = match entry.event_type {
-                            ActivityEventType::NoteAdded => "added a note",
-                            ActivityEventType::StatusChanged => "changed status",
-                        };
-
-                        html! {
-                            <li class={classes!("activity-entry", type_class)} onclick={on_click}>
-                                <div class="activity-entry-header">
-                                    <span class="activity-item-id">{ &entry.item_id }</span>
-                                    <span class="activity-time">{ format_relative_time(&entry.timestamp) }</span>
-                                </div>
-                                <div class="activity-actor">
-                                    { &entry.actor_name }
-                                    { " " }
-                                    { type_label }
-                                </div>
-                                <div class="activity-detail">{ &entry.detail }</div>
-                            </li>
-                        }
-                    })}
-                </ul>
-            }
+            // Desktop: always visible
+            <div class="activity-desktop">
+                <h3>
+                    { "Recent Activity" }
+                    { count_badge.clone() }
+                </h3>
+                { activity_content.clone() }
+            </div>
+            // Mobile: collapsible
+            <details class="activity-mobile">
+                <summary>
+                    { "Recent Activity " }
+                    { count_badge }
+                </summary>
+                { activity_content }
+            </details>
         </div>
     }
 }
