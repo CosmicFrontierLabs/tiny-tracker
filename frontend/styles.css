@@ -733,6 +733,20 @@ main {
     gap: 0.5rem;
 }
 
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
 .filter-group label {
     font-weight: 500;
     color: #666;
