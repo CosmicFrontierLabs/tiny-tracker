@@ -340,9 +340,9 @@ fn parse_item_id(s: &str) -> anyhow::Result<(String, i32)> {
 
 /// Resolve a user name (like "M. Fitzgerald") to a user ID.
 /// Matches against the `name` column using case-insensitive prefix/contains matching.
-fn resolve_user<'a>(
+fn resolve_user(
     name: &str,
-    users: &'a [User],
+    users: &[User],
     user_cache: &mut HashMap<String, i32>,
 ) -> anyhow::Result<i32> {
     let name = name.trim();
