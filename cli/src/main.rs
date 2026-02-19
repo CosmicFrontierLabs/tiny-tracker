@@ -326,7 +326,10 @@ fn parse_item_id(s: &str) -> anyhow::Result<(String, i32)> {
     let s = s.trim();
     let parts: Vec<&str> = s.splitn(2, '-').collect();
     if parts.len() != 2 {
-        anyhow::bail!("Invalid action item ID format: '{}' (expected PREFIX-NUMBER)", s);
+        anyhow::bail!(
+            "Invalid action item ID format: '{}' (expected PREFIX-NUMBER)",
+            s
+        );
     }
     let prefix = parts[0].to_string();
     let number: i32 = parts[1]
@@ -646,12 +649,15 @@ fn import_csv(file: PathBuf, vendor_prefix: Option<String>, dry_run: bool) -> an
     let vendor: Vendor = vendors::table
         .filter(vendors::prefix.eq(&prefix))
         .first(&mut conn)
-        .with_context(|| format!("Vendor with prefix '{}' not found. Create it first.", prefix))?;
+        .with_context(|| {
+            format!(
+                "Vendor with prefix '{}' not found. Create it first.",
+                prefix
+            )
+        })?;
 
     // Load all users for name resolution
-    let all_users: Vec<User> = users::table
-        .order(users::name.asc())
-        .load(&mut conn)?;
+    let all_users: Vec<User> = users::table.order(users::name.asc()).load(&mut conn)?;
 
     if all_users.is_empty() {
         anyhow::bail!("No users in database. Create users first.");
