@@ -69,6 +69,24 @@ pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
 
     let entry_count = entries.len();
 
+    let on_clear = {
+        let entries = entries.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            let now = Utc::now().to_rfc3339();
+            let _ = LocalStorage::set(STORAGE_KEY, now);
+            entries.set(Vec::new());
+        })
+    };
+
+    let clear_btn = if entry_count > 0 {
+        html! {
+            <button class="activity-clear-btn" onclick={on_clear}>{ "Clear" }</button>
+        }
+    } else {
+        html! {}
+    };
+
     let activity_content = if *loading {
         html! { <p class="activity-empty">{ "Loading..." }</p> }
     } else if entries.is_empty() {
@@ -128,6 +146,7 @@ pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
                 <h3>
                     { "Recent Activity" }
                     { count_badge.clone() }
+                    { clear_btn.clone() }
                 </h3>
                 { activity_content.clone() }
             </div>
@@ -137,6 +156,7 @@ pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
                     { "Recent Activity " }
                     { count_badge }
                 </summary>
+                { clear_btn }
                 { activity_content }
             </details>
         </div>

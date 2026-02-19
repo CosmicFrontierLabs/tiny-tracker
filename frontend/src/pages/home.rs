@@ -99,8 +99,8 @@ pub fn home(props: &HomeProps) -> Html {
     let filter_owner_id = use_state(|| None::<i32>);
     let show_manage_vendors_modal = use_state(|| false);
     let show_completed = use_state(|| false);
-    let sort_column = use_state(|| SortColumn::Created);
-    let sort_direction = use_state(|| SortDirection::Desc);
+    let sort_column = use_state(|| SortColumn::Id);
+    let sort_direction = use_state(|| SortDirection::Asc);
 
     {
         let items = items.clone();
