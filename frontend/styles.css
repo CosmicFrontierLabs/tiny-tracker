@@ -934,6 +934,23 @@ main {
     font-weight: 600;
 }
 
+.activity-clear-btn {
+    margin-left: auto;
+    background: none;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.7rem;
+    color: #7f8c8d;
+    cursor: pointer;
+}
+
+.activity-clear-btn:hover {
+    background: #ecf0f1;
+    color: #2c3e50;
+    border-color: #95a5a6;
+}
+
 .activity-list {
     list-style: none;
     padding: 0;
