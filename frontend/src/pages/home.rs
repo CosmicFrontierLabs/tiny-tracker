@@ -94,6 +94,16 @@ pub fn home(props: &HomeProps) -> Html {
     let error = use_state(|| None::<String>);
     let show_new_item_modal = use_state(|| false);
     let selected_item_id = use_state(|| props.initial_item_id.clone());
+
+    {
+        let selected_item_id = selected_item_id.clone();
+        let initial = props.initial_item_id.clone();
+        use_effect_with(initial.clone(), move |_| {
+            selected_item_id.set(initial);
+            || ()
+        });
+    }
+
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
