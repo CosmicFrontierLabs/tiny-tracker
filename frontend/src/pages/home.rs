@@ -5,6 +5,9 @@ use shared::{ActionItemResponse, CategoryResponse, Vendor};
 use wasm_bindgen::JsCast;
 use web_sys::HtmlSelectElement;
 use yew::prelude::*;
+use yew_router::prelude::*;
+
+use crate::Route;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SortColumn {
@@ -74,8 +77,15 @@ fn reload_page() {
     }
 }
 
+#[derive(Properties, PartialEq)]
+pub struct HomeProps {
+    #[prop_or_default]
+    pub initial_item_id: Option<String>,
+}
+
 #[function_component(Home)]
-pub fn home() -> Html {
+pub fn home(props: &HomeProps) -> Html {
+    let navigator = use_navigator().unwrap();
     let items = use_state(Vec::<ActionItemResponse>::new);
     let vendors = use_state(Vec::<Vendor>::new);
     let users = use_state(Vec::<shared::User>::new);
@@ -83,7 +93,7 @@ pub fn home() -> Html {
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let show_new_item_modal = use_state(|| false);
-    let selected_item_id = use_state(|| None::<String>);
+    let selected_item_id = use_state(|| props.initial_item_id.clone());
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
@@ -188,9 +198,11 @@ pub fn home() -> Html {
     let on_item_detail_close = {
         let selected_item_id = selected_item_id.clone();
         let refresh_trigger = refresh_trigger.clone();
+        let navigator = navigator.clone();
         Callback::from(move |_| {
             selected_item_id.set(None);
             refresh_trigger.set(*refresh_trigger + 1);
+            navigator.push(&Route::Home);
         })
     };
 
@@ -463,11 +475,11 @@ pub fn home() -> Html {
                                 <tbody>
                                     { for filtered_items.iter().map(|item| {
                                         let item_id = item.id.clone();
-                                        let selected_item_id = selected_item_id.clone();
+                                        let navigator = navigator.clone();
                                         let on_row_click = {
                                             let item_id = item_id.clone();
                                             Callback::from(move |_| {
-                                                selected_item_id.set(Some(item_id.clone()));
+                                                navigator.push(&Route::Item { id: item_id.clone() });
                                             })
                                         };
                                         let creator_initials = get_initials(&item.created_by_name, item.created_by_initials.as_deref());
