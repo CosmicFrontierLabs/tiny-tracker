@@ -27,7 +27,7 @@ pub fn header() -> Html {
         <header class="header">
             <nav>
                 <Link<Route> to={Route::Home}>
-                    <h1>{ "Action Tracker" }</h1>
+                    <h1>{ "Cosmic Frontier" }<span class="header-subtitle">{ " Action Tracker" }</span></h1>
                 </Link<Route>>
                 <button class="btn-logout" onclick={on_logout} disabled={*logging_out}>
                     { if *logging_out { "Logging out..." } else { "Logout" } }
