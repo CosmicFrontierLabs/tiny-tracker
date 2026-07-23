@@ -1,8 +1,8 @@
 # Build stage for frontend (WASM)
-FROM rust:1.93-bookworm AS frontend-builder
+FROM rust:1.96-bookworm AS frontend-builder
 
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install trunk
+RUN cargo install trunk --locked
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
@@ -15,7 +15,7 @@ WORKDIR /app/frontend
 RUN trunk build --release
 
 # Build stage for backend
-FROM rust:1.93-bookworm AS backend-builder
+FROM rust:1.96-bookworm AS backend-builder
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
