@@ -35,24 +35,8 @@ pub async fn history(
         Err(resp) => return resp,
     };
 
-    // Verify item exists
-    let item_exists: bool = action_items::table
-        .filter(action_items::id.eq(&item_id))
-        .count()
-        .get_result::<i64>(&mut conn)
-        .await
-        .map(|c| c > 0)
-        .unwrap_or(false);
-
-    if !item_exists {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(ApiError::not_found(format!(
-                "Action item {} not found",
-                item_id
-            ))),
-        )
-            .into_response();
+    if let Err(resp) = super::ensure_item_exists(&mut conn, &item_id).await {
+        return resp;
     }
 
     let history: Vec<(StatusHistory, User)> = match status_history::table
@@ -114,24 +98,8 @@ pub async fn change(
         Err(resp) => return resp,
     };
 
-    // Verify item exists
-    let item_exists: bool = action_items::table
-        .filter(action_items::id.eq(&item_id))
-        .count()
-        .get_result::<i64>(&mut conn)
-        .await
-        .map(|c| c > 0)
-        .unwrap_or(false);
-
-    if !item_exists {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(ApiError::not_found(format!(
-                "Action item {} not found",
-                item_id
-            ))),
-        )
-            .into_response();
+    if let Err(resp) = super::ensure_item_exists(&mut conn, &item_id).await {
+        return resp;
     }
 
     let new_status = NewStatusHistory {
