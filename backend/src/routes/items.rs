@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use serde::Deserialize;
@@ -47,6 +47,43 @@ pub struct UpdateActionItemReq {
     pub owner_id: Option<i32>,
     pub priority: Option<String>,
     pub description: Option<Option<String>>,
+}
+
+/// Assemble an `ActionItemResponse` from an item plus its resolved category, users, and status.
+fn build_item_response(
+    item: ActionItem,
+    category_name: String,
+    creator: Option<&User>,
+    owner: Option<&User>,
+    status: String,
+    status_changed_at: DateTime<Utc>,
+) -> ActionItemResponse {
+    ActionItemResponse {
+        id: item.id,
+        vendor_id: item.vendor_id,
+        number: item.number,
+        title: item.title,
+        description: item.description,
+        create_date: item.create_date,
+        created_by_id: item.created_by_id,
+        created_by_name: creator
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        created_by_initials: creator.and_then(|u| u.initials.clone()),
+        due_date: item.due_date,
+        category_id: item.category_id,
+        category: category_name,
+        owner_id: item.owner_id,
+        owner_name: owner
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string()),
+        owner_initials: owner.and_then(|u| u.initials.clone()),
+        priority: item.priority,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        status,
+        status_changed_at,
+    }
 }
 
 pub async fn list_all(
@@ -149,35 +186,17 @@ async fn list_items_internal(
             }
         }
 
-        let creator = users_map.get(&item.created_by_id);
-        let owner = users_map.get(&item.owner_id);
+        let creator = users_map.get(&item.created_by_id).copied();
+        let owner = users_map.get(&item.owner_id).copied();
 
-        result.push(ActionItemResponse {
-            id: item.id,
-            vendor_id: item.vendor_id,
-            number: item.number,
-            title: item.title,
-            description: item.description,
-            create_date: item.create_date,
-            created_by_id: item.created_by_id,
-            created_by_name: creator
-                .map(|u| u.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            created_by_initials: creator.and_then(|u| u.initials.clone()),
-            due_date: item.due_date,
-            category_id: item.category_id,
-            category: category.name,
-            owner_id: item.owner_id,
-            owner_name: owner
-                .map(|u| u.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            owner_initials: owner.and_then(|u| u.initials.clone()),
-            priority: item.priority,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
+        result.push(build_item_response(
+            item,
+            category.name,
+            creator,
+            owner,
             status,
             status_changed_at,
-        });
+        ));
     }
 
     Json(result).into_response()
@@ -247,34 +266,14 @@ pub async fn get(
         None => ("New".to_string(), item.created_at),
     };
 
-    Json(ActionItemResponse {
-        id: item.id,
-        vendor_id: item.vendor_id,
-        number: item.number,
-        title: item.title,
-        description: item.description,
-        create_date: item.create_date,
-        created_by_id: item.created_by_id,
-        created_by_name: creator
-            .as_ref()
-            .map(|u| u.name.clone())
-            .unwrap_or_else(|| "Unknown".to_string()),
-        created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
-        due_date: item.due_date,
-        category_id: item.category_id,
-        category: category.name,
-        owner_id: item.owner_id,
-        owner_name: owner
-            .as_ref()
-            .map(|u| u.name.clone())
-            .unwrap_or_else(|| "Unknown".to_string()),
-        owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
-        priority: item.priority,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
+    Json(build_item_response(
+        item,
+        category.name,
+        creator.as_ref(),
+        owner.as_ref(),
         status,
         status_changed_at,
-    })
+    ))
     .into_response()
 }
 
@@ -422,36 +421,17 @@ pub async fn create(
         .await
         .ok();
 
+    let created_at = item.created_at;
     (
         StatusCode::CREATED,
-        Json(ActionItemResponse {
-            id: item.id,
-            vendor_id: item.vendor_id,
-            number: item.number,
-            title: item.title,
-            description: item.description,
-            create_date: item.create_date,
-            created_by_id: item.created_by_id,
-            created_by_name: creator
-                .as_ref()
-                .map(|u| u.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
-            due_date: item.due_date,
-            category_id: item.category_id,
-            category: category.name,
-            owner_id: item.owner_id,
-            owner_name: owner
-                .as_ref()
-                .map(|u| u.name.clone())
-                .unwrap_or_else(|| "Unknown".to_string()),
-            owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
-            priority: item.priority,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-            status: "New".to_string(),
-            status_changed_at: item.created_at,
-        }),
+        Json(build_item_response(
+            item,
+            category.name,
+            creator.as_ref(),
+            owner.as_ref(),
+            "New".to_string(),
+            created_at,
+        )),
     )
         .into_response()
 }
@@ -556,34 +536,14 @@ pub async fn update(
         .await
         .ok();
 
-    Json(ActionItemResponse {
-        id: item.id,
-        vendor_id: item.vendor_id,
-        number: item.number,
-        title: item.title,
-        description: item.description,
-        create_date: item.create_date,
-        created_by_id: item.created_by_id,
-        created_by_name: creator
-            .as_ref()
-            .map(|u| u.name.clone())
-            .unwrap_or_else(|| "Unknown".to_string()),
-        created_by_initials: creator.as_ref().and_then(|u| u.initials.clone()),
-        due_date: item.due_date,
-        category_id: item.category_id,
-        category: category.name,
-        owner_id: item.owner_id,
-        owner_name: owner
-            .as_ref()
-            .map(|u| u.name.clone())
-            .unwrap_or_else(|| "Unknown".to_string()),
-        owner_initials: owner.as_ref().and_then(|u| u.initials.clone()),
-        priority: item.priority,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
+    Json(build_item_response(
+        item,
+        category.name,
+        creator.as_ref(),
+        owner.as_ref(),
         status,
         status_changed_at,
-    })
+    ))
     .into_response()
 }
 
