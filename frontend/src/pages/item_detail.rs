@@ -205,7 +205,7 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                 }
 
                 // Sort by timestamp descending (newest first)
-                entries.sort_by(|a, b| b.0.cmp(&a.0));
+                entries.sort_by_key(|e| std::cmp::Reverse(e.0));
                 let sorted_history: Vec<HistoryEntry> =
                     entries.into_iter().map(|(_, e)| e).collect();
                 history.set(sorted_history);
