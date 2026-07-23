@@ -7,6 +7,8 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
+use crate::pages::status_style::{priority_class, status_class};
+
 // (display_name, api_value)
 const STATUSES: &[(&str, &str)] = &[
     ("New", "new"),
@@ -641,27 +643,6 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                 changing_category.set(false);
             });
         })
-    };
-
-    let priority_class = |priority: &str| -> &'static str {
-        match priority {
-            "High" => "priority-high",
-            "Medium" => "priority-medium",
-            "Low" => "priority-low",
-            _ => "",
-        }
-    };
-
-    let status_class = |status: &str| -> &'static str {
-        match status {
-            "New" => "status-new",
-            "Not Started" => "status-not-started",
-            "In Progress" => "status-in-progress",
-            "TBC" => "status-tbc",
-            "Complete" => "status-complete",
-            "Blocked" => "status-blocked",
-            _ => "",
-        }
     };
 
     html! {
