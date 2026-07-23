@@ -170,7 +170,7 @@ async fn list_items_internal(
     // Build a map of user IDs to users for efficient lookup
     let user_ids: Vec<i32> = items
         .iter()
-        .flat_map(|(item, _)| vec![item.created_by_id, item.owner_id])
+        .flat_map(|(item, _)| [item.created_by_id, item.owner_id])
         .collect();
 
     let users_list: Vec<User> = users::table
