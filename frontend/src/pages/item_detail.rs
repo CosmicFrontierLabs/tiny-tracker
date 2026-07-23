@@ -106,6 +106,19 @@ fn format_naive_date(date: &NaiveDate) -> String {
         .unwrap_or_else(|| date.format("%b %d, %Y").to_string())
 }
 
+/// PATCH an item with the given JSON body; returns true on a successful response.
+async fn patch_item(item_id: &str, body: serde_json::Value) -> bool {
+    matches!(
+        Request::patch(&format!("/api/items/{}", item_id))
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .unwrap()
+            .send()
+            .await,
+        Ok(resp) if resp.ok()
+    )
+}
+
 #[function_component(ItemDetailModal)]
 pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let item = use_state(|| None::<ActionItemResponse>);
@@ -338,17 +351,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     "title": new_title,
                 });
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 saving.set(false);
                 editing_title.set(false);
@@ -423,17 +427,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     serde_json::json!({ "description": new_desc })
                 };
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 saving.set(false);
                 editing_description.set(false);
@@ -526,17 +521,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     "owner_id": new_owner_id,
                 });
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 changing_owner.set(false);
             });
@@ -572,17 +558,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     "priority": new_priority,
                 });
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 changing_priority.set(false);
             });
@@ -621,17 +598,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     serde_json::json!({ "due_date": new_date })
                 };
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 changing_due_date.set(false);
             });
@@ -667,17 +635,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     "category_id": new_category_id,
                 });
 
-                match Request::patch(&format!("/api/items/{}", item_id))
-                    .header("Content-Type", "application/json")
-                    .body(body.to_string())
-                    .unwrap()
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.ok() => {
-                        refresh_trigger.set(*refresh_trigger + 1);
-                    }
-                    _ => {}
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
                 }
                 changing_category.set(false);
             });
