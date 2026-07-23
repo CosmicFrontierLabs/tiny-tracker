@@ -7,6 +7,7 @@ use web_sys::HtmlSelectElement;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+use crate::pages::status_style::{priority_class, status_class};
 use crate::Route;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -230,27 +231,6 @@ pub fn home(props: &HomeProps) -> Html {
             show_manage_vendors_modal.set(false);
             refresh_trigger.set(*refresh_trigger + 1);
         })
-    };
-
-    let priority_class = |priority: &str| -> &'static str {
-        match priority {
-            "High" => "priority-high",
-            "Medium" => "priority-medium",
-            "Low" => "priority-low",
-            _ => "",
-        }
-    };
-
-    let status_class = |status: &str| -> &'static str {
-        match status {
-            "New" => "status-new",
-            "Not Started" => "status-not-started",
-            "In Progress" => "status-in-progress",
-            "TBC" => "status-tbc",
-            "Complete" => "status-complete",
-            "Blocked" => "status-blocked",
-            _ => "",
-        }
     };
 
     let on_vendor_filter_change = {
