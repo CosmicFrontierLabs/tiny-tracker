@@ -39,15 +39,9 @@ pub async fn list(
     Query(params): Query<ListVendorsParams>,
     _auth: AuthUser,
 ) -> impl IntoResponse {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let mut query = vendors::table.order(vendors::prefix.asc()).into_boxed();
@@ -97,15 +91,9 @@ pub async fn get(
     Path(id): Path<i32>,
     _auth: AuthUser,
 ) -> impl IntoResponse {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let vendor: Result<Vendor, _> = vendors::table
@@ -160,15 +148,9 @@ pub async fn create(
             .into_response();
     }
 
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let new_vendor = NewVendor {
@@ -221,15 +203,9 @@ pub async fn update(
         }
     }
 
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let changeset = UpdateVendor {

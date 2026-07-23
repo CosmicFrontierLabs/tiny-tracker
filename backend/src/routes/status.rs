@@ -30,15 +30,9 @@ pub async fn history(
     Path(item_id): Path<String>,
     _auth: AuthUser,
 ) -> impl IntoResponse {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     // Verify item exists
@@ -115,15 +109,9 @@ pub async fn change(
             .into_response();
     }
 
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     // Verify item exists

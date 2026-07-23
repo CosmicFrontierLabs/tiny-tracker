@@ -71,15 +71,9 @@ async fn list_items_internal(
     vendor_id: Option<i32>,
     query: ItemsQuery,
 ) -> Response {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let mut items_query = action_items::table
@@ -194,15 +188,9 @@ pub async fn get(
     Path(item_id): Path<String>,
     _auth: AuthUser,
 ) -> impl IntoResponse {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let result: (ActionItem, Category) = match action_items::table
@@ -305,15 +293,9 @@ pub async fn create(
             .into_response();
     }
 
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     // Get vendor and increment next_number
@@ -491,15 +473,9 @@ pub async fn update(
         }
     }
 
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let changeset = UpdateActionItem {
@@ -616,15 +592,9 @@ pub async fn go_redirect(
     Path(item_id): Path<String>,
     _auth: AuthUser,
 ) -> Response {
-    let mut conn = match state.pool.get().await {
+    let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError::internal_error("Database connection failed")),
-            )
-                .into_response()
-        }
+        Err(resp) => return resp,
     };
 
     let exists: bool = action_items::table
