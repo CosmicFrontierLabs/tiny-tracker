@@ -6,7 +6,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use serde::Deserialize;
 use shared::{ActionItemResponse, ApiError};
 use std::sync::Arc;
@@ -47,6 +47,24 @@ pub struct UpdateActionItemReq {
     pub owner_id: Option<i32>,
     pub priority: Option<String>,
     pub description: Option<Option<String>>,
+}
+
+/// Return an item's current status and when it was set, falling back to "New" / creation time.
+async fn current_status(
+    conn: &mut AsyncPgConnection,
+    item: &ActionItem,
+) -> (String, DateTime<Utc>) {
+    let status_entry: Option<StatusHistory> = status_history::table
+        .filter(status_history::action_item_id.eq(&item.id))
+        .order(status_history::changed_at.desc())
+        .first(conn)
+        .await
+        .ok();
+
+    match status_entry {
+        Some(sh) => (sh.status, sh.changed_at),
+        None => ("New".to_string(), item.created_at),
+    }
 }
 
 /// Assemble an `ActionItemResponse` from an item plus its resolved category, users, and status.
@@ -167,17 +185,7 @@ async fn list_items_internal(
     // Get current status for each item
     let mut result = Vec::new();
     for (item, category) in items {
-        let status_entry: Option<StatusHistory> = status_history::table
-            .filter(status_history::action_item_id.eq(&item.id))
-            .order(status_history::changed_at.desc())
-            .first(&mut conn)
-            .await
-            .ok();
-
-        let (status, status_changed_at) = match status_entry {
-            Some(sh) => (sh.status, sh.changed_at),
-            None => ("New".to_string(), item.created_at),
-        };
+        let (status, status_changed_at) = current_status(&mut conn, &item).await;
 
         // Filter by status if requested
         if let Some(ref query_status) = query.status {
@@ -254,17 +262,7 @@ pub async fn get(
         .await
         .ok();
 
-    let status_entry: Option<StatusHistory> = status_history::table
-        .filter(status_history::action_item_id.eq(&item.id))
-        .order(status_history::changed_at.desc())
-        .first(&mut conn)
-        .await
-        .ok();
-
-    let (status, status_changed_at) = match status_entry {
-        Some(sh) => (sh.status, sh.changed_at),
-        None => ("New".to_string(), item.created_at),
-    };
+    let (status, status_changed_at) = current_status(&mut conn, &item).await;
 
     Json(build_item_response(
         item,
@@ -511,17 +509,7 @@ pub async fn update(
         }
     };
 
-    let status_entry: Option<StatusHistory> = status_history::table
-        .filter(status_history::action_item_id.eq(&item.id))
-        .order(status_history::changed_at.desc())
-        .first(&mut conn)
-        .await
-        .ok();
-
-    let (status, status_changed_at) = match status_entry {
-        Some(sh) => (sh.status, sh.changed_at),
-        None => ("New".to_string(), item.created_at),
-    };
+    let (status, status_changed_at) = current_status(&mut conn, &item).await;
 
     // Fetch creator and owner names
     let creator: Option<User> = users::table
