@@ -288,10 +288,9 @@ pub async fn callback(
 }
 
 pub async fn logout() -> Response {
-    let cookie = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
     (
         StatusCode::OK,
-        [(header::SET_COOKIE, cookie)],
+        [(header::SET_COOKIE, super::CLEAR_TOKEN_COOKIE)],
         Json(shared::LogoutResponse {
             status: "logged out".to_string(),
         }),
