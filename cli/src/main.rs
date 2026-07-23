@@ -857,8 +857,8 @@ fn main() -> anyhow::Result<()> {
             let mut conn = establish_connection();
 
             let new_user = NewUser {
-                email: email.clone(),
-                name: name.clone(),
+                email,
+                name,
                 initials,
             };
 
@@ -866,7 +866,7 @@ fn main() -> anyhow::Result<()> {
                 .values(&new_user)
                 .execute(&mut conn)?;
 
-            println!("Created user: {} <{}>", name, email);
+            println!("Created user: {} <{}>", new_user.name, new_user.email);
         }
 
         Commands::ListUsers => {
@@ -906,8 +906,8 @@ fn main() -> anyhow::Result<()> {
             let mut conn = establish_connection();
 
             let new_vendor = NewVendor {
-                prefix: prefix.clone(),
-                name: name.clone(),
+                prefix,
+                name,
                 description,
             };
 
@@ -915,7 +915,10 @@ fn main() -> anyhow::Result<()> {
                 .values(&new_vendor)
                 .execute(&mut conn)?;
 
-            println!("Created vendor: {} ({})", name, prefix);
+            println!(
+                "Created vendor: {} ({})",
+                new_vendor.name, new_vendor.prefix
+            );
         }
 
         Commands::ListVendors => {
