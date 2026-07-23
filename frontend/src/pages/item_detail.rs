@@ -186,7 +186,7 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                     if let Ok(status_changes) = resp.json::<Vec<StatusHistoryResponse>>().await {
                         let mut prev_status: Option<String> = None;
                         // Status history comes in desc order, reverse to get chronological
-                        let mut changes: Vec<_> = status_changes.into_iter().collect();
+                        let mut changes = status_changes;
                         changes.reverse();
                         for change in changes {
                             entries.push((
