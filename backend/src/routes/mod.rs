@@ -14,6 +14,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use diesel_async::pooled_connection::deadpool::Object;
+use diesel_async::AsyncPgConnection;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use shared::ApiError;
@@ -22,6 +24,17 @@ use std::sync::Arc;
 use crate::AppState;
 
 const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+
+/// Acquire a pooled database connection, mapping pool failures to a 500 response.
+pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnection>, Response> {
+    state.pool.get().await.map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::internal_error("Database connection failed")),
+        )
+            .into_response()
+    })
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
