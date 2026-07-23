@@ -14,13 +14,15 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use diesel::prelude::*;
 use diesel_async::pooled_connection::deadpool::Object;
-use diesel_async::AsyncPgConnection;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use shared::ApiError;
 use std::sync::Arc;
 
+use crate::db::schema::action_items;
 use crate::AppState;
 
 const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
@@ -34,6 +36,33 @@ pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnectio
         )
             .into_response()
     })
+}
+
+/// Ensure an action item exists, returning a 404 response if it does not.
+pub(super) async fn ensure_item_exists(
+    conn: &mut AsyncPgConnection,
+    item_id: &str,
+) -> Result<(), Response> {
+    let exists: bool = action_items::table
+        .filter(action_items::id.eq(item_id))
+        .count()
+        .get_result::<i64>(conn)
+        .await
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if exists {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(ApiError::not_found(format!(
+                "Action item {} not found",
+                item_id
+            ))),
+        )
+            .into_response())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
