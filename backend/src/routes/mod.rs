@@ -25,7 +25,7 @@ use std::sync::Arc;
 use crate::db::schema::action_items;
 use crate::AppState;
 
-const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+pub(super) const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 
 /// Acquire a pooled database connection, mapping pool failures to a 500 response.
 pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnection>, Response> {
