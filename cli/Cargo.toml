@@ -1,0 +1,27 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "action-tracker-cli"
+path = "src/main.rs"
+
+[dependencies]
+
+# Database
+diesel = { version = "2", features = ["postgres", "chrono"] }
+dotenvy = "0.15"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { workspace = true }
+chrono = { workspace = true }
+
+# CSV
+csv = "1"
+
+# Error handling
+anyhow = "1"

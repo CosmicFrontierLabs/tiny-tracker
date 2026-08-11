@@ -1,0 +1,523 @@
+use std::cmp::Ordering;
+
+use gloo_net::http::Request;
+use shared::{ActionItemResponse, CategoryResponse, Vendor};
+use wasm_bindgen::JsCast;
+use web_sys::HtmlSelectElement;
+use yew::prelude::*;
+use yew_router::prelude::*;
+
+use crate::pages::status_style::{priority_class, status_class};
+use crate::Route;
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortColumn {
+    Id,
+    Title,
+    Category,
+    Priority,
+    Status,
+    Created,
+    DueDate,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SortDirection {
+    Asc,
+    Desc,
+}
+
+fn priority_ord(p: &str) -> u8 {
+    match p {
+        "High" => 0,
+        "Medium" => 1,
+        "Low" => 2,
+        _ => 3,
+    }
+}
+
+fn status_ord(s: &str) -> u8 {
+    match s {
+        "New" => 0,
+        "Not Started" => 1,
+        "In Progress" => 2,
+        "TBC" => 3,
+        "Blocked" => 4,
+        "Complete" => 5,
+        _ => 6,
+    }
+}
+
+use crate::components::{ActivitySidebar, Header};
+use crate::pages::item_detail::ItemDetailModal;
+use crate::pages::item_form::NewItemModal;
+use crate::pages::manage_vendors::ManageVendorsModal;
+
+fn name_to_color(name: &str) -> String {
+    let hash: u32 = name
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let hue = hash % 360;
+    format!("hsl({}, 65%, 45%)", hue)
+}
+
+fn get_initials(name: &str, fallback_initials: Option<&str>) -> String {
+    if let Some(initials) = fallback_initials {
+        return initials.to_string();
+    }
+    name.split_whitespace()
+        .filter_map(|word| word.chars().next())
+        .take(2)
+        .collect::<String>()
+        .to_uppercase()
+}
+
+fn reload_page() {
+    if let Some(window) = web_sys::window() {
+        let _ = window.location().reload();
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub struct HomeProps {
+    #[prop_or_default]
+    pub initial_item_id: Option<String>,
+}
+
+#[function_component(Home)]
+pub fn home(props: &HomeProps) -> Html {
+    let navigator = use_navigator().unwrap();
+    let items = use_state(Vec::<ActionItemResponse>::new);
+    let vendors = use_state(Vec::<Vendor>::new);
+    let users = use_state(Vec::<shared::User>::new);
+    let categories = use_state(Vec::<CategoryResponse>::new);
+    let loading = use_state(|| true);
+    let error = use_state(|| None::<String>);
+    let show_new_item_modal = use_state(|| false);
+    let selected_item_id = use_state(|| props.initial_item_id.clone());
+
+    {
+        let selected_item_id = selected_item_id.clone();
+        let initial = props.initial_item_id.clone();
+        use_effect_with(initial.clone(), move |_| {
+            selected_item_id.set(initial);
+            || ()
+        });
+    }
+
+    let refresh_trigger = use_state(|| 0u32);
+    let filter_vendor_id = use_state(|| None::<i32>);
+    let filter_owner_id = use_state(|| None::<i32>);
+    let show_manage_vendors_modal = use_state(|| false);
+    let show_completed = use_state(|| false);
+    let sort_column = use_state(|| SortColumn::Id);
+    let sort_direction = use_state(|| SortDirection::Asc);
+
+    {
+        let items = items.clone();
+        let vendors = vendors.clone();
+        let users = users.clone();
+        let categories = categories.clone();
+        let loading = loading.clone();
+        let error = error.clone();
+        let refresh = *refresh_trigger;
+
+        use_effect_with(refresh, move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                // Fetch items
+                match Request::get("/api/items").send().await {
+                    Ok(resp) => {
+                        if resp.status() == 401 {
+                            reload_page();
+                            return;
+                        }
+                        if resp.ok() {
+                            match resp.json::<Vec<ActionItemResponse>>().await {
+                                Ok(data) => {
+                                    items.set(data);
+                                }
+                                Err(e) => {
+                                    error.set(Some(format!("Failed to parse response: {}", e)));
+                                }
+                            }
+                        } else {
+                            error.set(Some(format!("Request failed: {}", resp.status())));
+                        }
+                    }
+                    Err(e) => {
+                        error.set(Some(format!("Request error: {}", e)));
+                    }
+                }
+
+                // Fetch vendors for the dropdown
+                if let Ok(resp) = Request::get("/api/vendors").send().await {
+                    if let Ok(data) = resp.json::<Vec<Vendor>>().await {
+                        vendors.set(data);
+                    }
+                }
+
+                // Fetch users for the dropdown
+                if let Ok(resp) = Request::get("/api/users").send().await {
+                    if let Ok(data) = resp.json::<Vec<shared::User>>().await {
+                        users.set(data);
+                    }
+                }
+
+                // Fetch categories for the dropdown
+                if let Ok(resp) = Request::get("/api/categories").send().await {
+                    if let Ok(data) = resp.json::<Vec<CategoryResponse>>().await {
+                        categories.set(data);
+                    }
+                }
+
+                loading.set(false);
+            });
+            || ()
+        });
+    }
+
+    let on_new_item_click = {
+        let show_new_item_modal = show_new_item_modal.clone();
+        Callback::from(move |_| {
+            show_new_item_modal.set(true);
+        })
+    };
+
+    let on_new_item_modal_close = {
+        let show_new_item_modal = show_new_item_modal.clone();
+        Callback::from(move |_| {
+            show_new_item_modal.set(false);
+        })
+    };
+
+    let on_item_created = {
+        let show_new_item_modal = show_new_item_modal.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            show_new_item_modal.set(false);
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
+
+    let on_data_refresh = {
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
+
+    let on_item_detail_close = {
+        let selected_item_id = selected_item_id.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let navigator = navigator.clone();
+        Callback::from(move |_| {
+            selected_item_id.set(None);
+            refresh_trigger.set(*refresh_trigger + 1);
+            navigator.push(&Route::Home);
+        })
+    };
+
+    let on_manage_vendors_click = {
+        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
+        Callback::from(move |_| {
+            show_manage_vendors_modal.set(true);
+        })
+    };
+
+    let on_manage_vendors_close = {
+        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            show_manage_vendors_modal.set(false);
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
+
+    let on_vendor_filter_change = {
+        let filter_vendor_id = filter_vendor_id.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            let value = select.value();
+            if value.is_empty() {
+                filter_vendor_id.set(None);
+            } else {
+                filter_vendor_id.set(value.parse().ok());
+            }
+        })
+    };
+
+    let on_owner_filter_change = {
+        let filter_owner_id = filter_owner_id.clone();
+        Callback::from(move |e: Event| {
+            let select: HtmlSelectElement = e.target().unwrap().dyn_into().unwrap();
+            let value = select.value();
+            if value.is_empty() {
+                filter_owner_id.set(None);
+            } else {
+                filter_owner_id.set(value.parse().ok());
+            }
+        })
+    };
+
+    let on_sort = {
+        let sort_column = sort_column.clone();
+        let sort_direction = sort_direction.clone();
+        Callback::from(move |col: SortColumn| {
+            if *sort_column == col {
+                sort_direction.set(match *sort_direction {
+                    SortDirection::Asc => SortDirection::Desc,
+                    SortDirection::Desc => SortDirection::Asc,
+                });
+            } else {
+                sort_column.set(col);
+                sort_direction.set(SortDirection::Asc);
+            }
+        })
+    };
+
+    let on_activity_select = {
+        let selected_item_id = selected_item_id.clone();
+        Callback::from(move |item_id: String| {
+            selected_item_id.set(Some(item_id));
+        })
+    };
+
+    let sort_indicator = |col: SortColumn| -> &'static str {
+        if *sort_column == col {
+            match *sort_direction {
+                SortDirection::Asc => " ↑",
+                SortDirection::Desc => " ↓",
+            }
+        } else {
+            ""
+        }
+    };
+
+    // Apply filters and sorting to items
+    let mut filtered_items: Vec<_> = items
+        .iter()
+        .filter(|item| {
+            let vendor_match = filter_vendor_id
+                .as_ref()
+                .map(|v| item.vendor_id == *v)
+                .unwrap_or(true);
+            let owner_match = filter_owner_id
+                .as_ref()
+                .map(|o| item.owner_id == *o)
+                .unwrap_or(true);
+            let completed_match = *show_completed || item.status != "Complete";
+            vendor_match && owner_match && completed_match
+        })
+        .collect();
+
+    let col = *sort_column;
+    let dir = *sort_direction;
+    filtered_items.sort_by(|a, b| {
+        let ord = match col {
+            SortColumn::Id => a.id.cmp(&b.id),
+            SortColumn::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+            SortColumn::Category => a.category.cmp(&b.category),
+            SortColumn::Priority => priority_ord(&a.priority).cmp(&priority_ord(&b.priority)),
+            SortColumn::Status => status_ord(&a.status).cmp(&status_ord(&b.status)),
+            SortColumn::Created => a.create_date.cmp(&b.create_date),
+            SortColumn::DueDate => match (&a.due_date, &b.due_date) {
+                (Some(a_d), Some(b_d)) => a_d.cmp(b_d),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+        };
+        match dir {
+            SortDirection::Asc => ord,
+            SortDirection::Desc => ord.reverse(),
+        }
+    });
+
+    html! {
+        <>
+            <Header />
+            <main>
+                <div class="page-header">
+                    <h2>{ "Action Items" }</h2>
+                    <div class="header-actions">
+                        <button type="button" class="btn btn-secondary" onclick={on_manage_vendors_click}>
+                            { "Manage Vendors" }
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick={on_new_item_click} disabled={vendors.is_empty()}>
+                            { "+ New Item" }
+                        </button>
+                    </div>
+                </div>
+
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>{ "Vendor:" }</label>
+                        <select onchange={on_vendor_filter_change}>
+                            <option value="" selected={filter_vendor_id.is_none()}>{ "All Vendors" }</option>
+                            { for vendors.iter().map(|v| {
+                                let selected = filter_vendor_id.as_ref().map(|id| *id == v.id).unwrap_or(false);
+                                html! {
+                                    <option value={v.id.to_string()} selected={selected}>{ &v.name }</option>
+                                }
+                            })}
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>{ "Owner:" }</label>
+                        <select onchange={on_owner_filter_change}>
+                            <option value="" selected={filter_owner_id.is_none()}>{ "All Owners" }</option>
+                            { for users.iter().map(|u| {
+                                let selected = filter_owner_id.as_ref().map(|id| *id == u.id).unwrap_or(false);
+                                html! {
+                                    <option value={u.id.to_string()} selected={selected}>{ &u.name }</option>
+                                }
+                            })}
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="checkbox-label">
+                            <input
+                                type="checkbox"
+                                checked={*show_completed}
+                                onchange={{
+                                    let show_completed = show_completed.clone();
+                                    Callback::from(move |_: Event| {
+                                        show_completed.set(!*show_completed);
+                                    })
+                                }}
+                            />
+                            { " Show Completed" }
+                        </label>
+                    </div>
+                </div>
+
+                if *show_new_item_modal {
+                    <NewItemModal
+                        vendors={(*vendors).clone()}
+                        users={(*users).clone()}
+                        categories={(*categories).clone()}
+                        on_close={on_new_item_modal_close}
+                        on_created={on_item_created}
+                        on_refresh={on_data_refresh.clone()}
+                    />
+                }
+
+                if *show_manage_vendors_modal {
+                    <ManageVendorsModal on_close={on_manage_vendors_close} />
+                }
+
+                if let Some(item_id) = (*selected_item_id).clone() {
+                    <ItemDetailModal
+                        item_id={item_id}
+                        users={(*users).clone()}
+                        categories={(*categories).clone()}
+                        on_close={on_item_detail_close}
+                    />
+                }
+
+                <div class="home-layout">
+                    <div class="home-main">
+                        if *loading {
+                            <p>{ "Loading..." }</p>
+                        } else if let Some(err) = (*error).clone() {
+                            <p class="error">{ err }</p>
+                        } else if vendors.is_empty() {
+                            <p>{ "No vendors configured. Click 'Manage Vendors' to add one." }</p>
+                        } else if items.is_empty() {
+                            <p>{ "No action items yet. Click '+ New Item' to create one." }</p>
+                        } else if filtered_items.is_empty() {
+                            <p>{ "No items match the current filters." }</p>
+                        } else {
+                            <table class="table items-table">
+                                <thead>
+                                    <tr>
+                                        { for [
+                                            ("ID", SortColumn::Id),
+                                            ("Title", SortColumn::Title),
+                                            ("Category", SortColumn::Category),
+                                        ].iter().map(|(label, col)| {
+                                            let col = *col;
+                                            let on_sort = on_sort.clone();
+                                            html! {
+                                                <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                                    { label }{ sort_indicator(col) }
+                                                </th>
+                                            }
+                                        })}
+                                        <th>{ "Creator" }</th>
+                                        <th>{ "Owner" }</th>
+                                        { for [
+                                            ("Priority", SortColumn::Priority),
+                                            ("Status", SortColumn::Status),
+                                            ("Created", SortColumn::Created),
+                                            ("Due Date", SortColumn::DueDate),
+                                        ].iter().map(|(label, col)| {
+                                            let col = *col;
+                                            let on_sort = on_sort.clone();
+                                            html! {
+                                                <th class="sortable-header" onclick={Callback::from(move |_| on_sort.emit(col))}>
+                                                    { label }{ sort_indicator(col) }
+                                                </th>
+                                            }
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    { for filtered_items.iter().map(|item| {
+                                        let item_id = item.id.clone();
+                                        let navigator = navigator.clone();
+                                        let on_row_click = {
+                                            let item_id = item_id.clone();
+                                            Callback::from(move |_| {
+                                                navigator.push(&Route::Item { id: item_id.clone() });
+                                            })
+                                        };
+                                        let creator_initials = get_initials(&item.created_by_name, item.created_by_initials.as_deref());
+                                        let creator_color = name_to_color(&item.created_by_name);
+                                        let owner_initials = get_initials(&item.owner_name, item.owner_initials.as_deref());
+                                        let owner_color = name_to_color(&item.owner_name);
+                                        html! {
+                                            <tr class="clickable-row" onclick={on_row_click}>
+                                                <td>
+                                                    <span class="item-id">{ &item.id }</span>
+                                                </td>
+                                                <td class="item-title">{ &item.title }</td>
+                                                <td>{ &item.category }</td>
+                                                <td>
+                                                    <span class="user-avatar" style={format!("background-color: {}", creator_color)} title={item.created_by_name.clone()}>
+                                                        { creator_initials }
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="user-avatar" style={format!("background-color: {}", owner_color)} title={item.owner_name.clone()}>
+                                                        { owner_initials }
+                                                    </span>
+                                                </td>
+                                                <td class={priority_class(&item.priority)}>
+                                                    { &item.priority }
+                                                </td>
+                                                <td class={status_class(&item.status)}>
+                                                    { &item.status }
+                                                </td>
+                                                <td>{ item.create_date.to_string() }</td>
+                                                <td>
+                                                    { item.due_date.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string()) }
+                                                </td>
+                                            </tr>
+                                        }
+                                    })}
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                    <aside class="home-sidebar">
+                        <ActivitySidebar
+                            on_select_item={on_activity_select}
+                            refresh_trigger={*refresh_trigger}
+                        />
+                    </aside>
+                </div>
+            </main>
+        </>
+    }
+}
