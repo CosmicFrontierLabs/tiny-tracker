@@ -3,6 +3,8 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+use crate::components::VendorDomains;
+
 #[derive(Clone, PartialEq, serde::Deserialize)]
 pub struct VendorEntry {
     pub id: i32,
@@ -23,6 +25,9 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let refresh_trigger = use_state(|| 0u32);
+
+    // Which vendor's portal-domain editor is open, if any.
+    let expanded_vendor = use_state(|| None::<i32>);
 
     let new_prefix = use_state(String::new);
     let new_name = use_state(String::new);
@@ -224,6 +229,7 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                     <th>{ "Name" }</th>
                                     <th>{ "Description" }</th>
                                     <th></th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -243,17 +249,38 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                             refresh_trigger.set(*refresh_trigger + 1);
                                         });
                                     });
+                                    let is_expanded = *expanded_vendor == Some(vendor_id);
+                                    let on_toggle_domains = {
+                                        let expanded_vendor = expanded_vendor.clone();
+                                        Callback::from(move |_: MouseEvent| {
+                                            expanded_vendor.set(if is_expanded { None } else { Some(vendor_id) });
+                                        })
+                                    };
                                     html! {
+                                        <>
                                         <tr>
                                             <td>{ &v.prefix }</td>
                                             <td>{ &v.name }</td>
                                             <td>{ v.description.as_deref().unwrap_or("-") }</td>
+                                            <td>
+                                                <button type="button" class="btn btn-small btn-secondary" onclick={on_toggle_domains}>
+                                                    { if is_expanded { "Hide portal" } else { "Portal" } }
+                                                </button>
+                                            </td>
                                             <td>
                                                 <button type="button" class="btn btn-small btn-danger" onclick={on_archive}>
                                                     { "Archive" }
                                                 </button>
                                             </td>
                                         </tr>
+                                        if is_expanded {
+                                            <tr class="vendor-domains-row">
+                                                <td colspan="5">
+                                                    <VendorDomains vendor_id={vendor_id} />
+                                                </td>
+                                            </tr>
+                                        }
+                                        </>
                                     }
                                 })}
                                 { for archived_vendors.iter().map(|v| {
@@ -277,6 +304,7 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                             <td>{ &v.prefix }</td>
                                             <td>{ &v.name }</td>
                                             <td>{ v.description.as_deref().unwrap_or("-") }</td>
+                                            <td></td>
                                             <td>
                                                 <button type="button" class="btn btn-small btn-success" onclick={on_unarchive}>
                                                     { "Unarchive" }

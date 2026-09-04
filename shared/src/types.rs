@@ -382,3 +382,60 @@ pub struct StatusChangeResponse {
     pub changed_at: DateTime<Utc>,
     pub comment: Option<String>,
 }
+
+// ============================================================================
+// Vendor Portal (read-only, magic-link authenticated)
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VendorPortalLinkRequest {
+    pub email: String,
+}
+
+/// Deliberately uninformative: the same response is returned whether or not the
+/// address matched a configured vendor domain, so the endpoint cannot be used to
+/// enumerate which domains are onboarded.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VendorPortalLinkResponse {
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VendorPortalMe {
+    pub vendor_id: i32,
+    pub vendor_prefix: String,
+    pub vendor_name: String,
+    pub email: String,
+    pub session_expires_at: DateTime<Utc>,
+}
+
+/// A single open item as shown to an external vendor contact.
+///
+/// Intentionally narrower than `ActionItemResponse`: it omits internal user IDs,
+/// the creating staff member, and note history. Only the assigned owner's display
+/// name is exposed, so the vendor knows who to chase.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VendorPortalItem {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub priority: String,
+    pub status: String,
+    pub create_date: NaiveDate,
+    pub due_date: Option<NaiveDate>,
+    pub status_changed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VendorAllowedDomainResponse {
+    pub id: i32,
+    pub vendor_id: i32,
+    pub domain: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateVendorAllowedDomain {
+    pub domain: String,
+}

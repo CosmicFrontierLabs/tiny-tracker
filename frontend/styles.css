@@ -1122,3 +1122,86 @@ main {
         display: block;
     }
 }
+
+/* Vendor portal */
+.vendor-portal-viewer {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.vendor-portal-footer {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    margin: 2rem 0 3rem;
+}
+
+.login-card form {
+    text-align: left;
+}
+
+.login-card .error {
+    text-align: left;
+}
+
+/* Vendor portal domain editor */
+.vendor-domains-row td {
+    background: #fafafa;
+}
+
+.vendor-domains h4 {
+    margin: 0 0 0.25rem;
+    color: #2c3e50;
+}
+
+.vendor-domains-hint {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    margin: 0 0 0.75rem;
+}
+
+.vendor-domains-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+}
+
+.vendor-domains-form input {
+    flex: 1;
+    max-width: 320px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.vendor-domains-empty {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.vendor-domains-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.vendor-domains-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    max-width: 420px;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.vendor-domains-list li:last-child {
+    border-bottom: none;
+}
