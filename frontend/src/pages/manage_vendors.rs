@@ -170,7 +170,7 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
 
     html! {
         <div class="modal-backdrop" onclick={on_backdrop_click}>
-            <div class="modal" onclick={on_modal_click}>
+            <div class="modal modal-large" onclick={on_modal_click}>
                 <div class="modal-header">
                     <h2>{ "Manage Vendors" }</h2>
                     <button class="btn-close" onclick={
@@ -229,7 +229,6 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                     <th>{ "Name" }</th>
                                     <th>{ "Description" }</th>
                                     <th></th>
-                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -263,19 +262,19 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                             <td>{ &v.name }</td>
                                             <td>{ v.description.as_deref().unwrap_or("-") }</td>
                                             <td>
-                                                <button type="button" class="btn btn-small btn-secondary" onclick={on_toggle_domains}>
-                                                    { if is_expanded { "Hide portal" } else { "Portal" } }
-                                                </button>
-                                            </td>
-                                            <td>
-                                                <button type="button" class="btn btn-small btn-danger" onclick={on_archive}>
-                                                    { "Archive" }
-                                                </button>
+                                                <div class="vendor-row-actions">
+                                                    <button type="button" class="btn btn-small btn-secondary" onclick={on_toggle_domains}>
+                                                        { if is_expanded { "Hide portal" } else { "Portal" } }
+                                                    </button>
+                                                    <button type="button" class="btn btn-small btn-danger" onclick={on_archive}>
+                                                        { "Archive" }
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                         if is_expanded {
                                             <tr class="vendor-domains-row">
-                                                <td colspan="5">
+                                                <td colspan="4">
                                                     <VendorDomains vendor_id={vendor_id} />
                                                 </td>
                                             </tr>
@@ -304,11 +303,12 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                             <td>{ &v.prefix }</td>
                                             <td>{ &v.name }</td>
                                             <td>{ v.description.as_deref().unwrap_or("-") }</td>
-                                            <td></td>
                                             <td>
-                                                <button type="button" class="btn btn-small btn-success" onclick={on_unarchive}>
-                                                    { "Unarchive" }
-                                                </button>
+                                                <div class="vendor-row-actions">
+                                                    <button type="button" class="btn btn-small btn-success" onclick={on_unarchive}>
+                                                        { "Unarchive" }
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     }
