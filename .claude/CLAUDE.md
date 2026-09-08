@@ -104,6 +104,12 @@ SMTP credentials are optional: Workspace's relay can authorise by static egress
 IP, so omitting **both** `SMTP_USER` and `SMTP_PASSWORD` is a supported mode.
 Setting exactly one is rejected as a typo.
 
+The EHLO name is set explicitly, defaulting to the `MAIL_FROM` domain. Do not
+rely on lettre's default — it is `hostname::get()`, which in a container is the
+container ID, and Google's relay treats the EHLO domain as one of two ways it
+identifies a sending domain. On the credential-less path there is no SMTP AUTH
+to identify us instead, so a hex container ID risks a `550 5.7.1`.
+
 ### API responses use shared types, not `json!`
 Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
 
@@ -163,6 +169,7 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 | `MAIL_FROM` | Prod only | From header, e.g. `Tracker <notifications@tracker.example.org>` |
 | `SMTP_HOST` / `SMTP_PORT` | No | Default `smtp.gmail.com` / `587` |
 | `SMTP_USER` / `SMTP_PASSWORD` | No | Both for authenticated SMTP; **neither** for IP-authorised relay. Exactly one is a startup error |
+| `SMTP_HELO_NAME` | No | EHLO domain; defaults to the `MAIL_FROM` domain |
 | `RESEND_API_KEY` | If resend | Resend API key |
 
 ## Deployment
