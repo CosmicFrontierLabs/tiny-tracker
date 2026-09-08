@@ -81,3 +81,49 @@ impl Mailer for ResendMailer {
         "resend"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ResendRequest;
+
+    /// Pins the wire shape of the Resend payload.
+    ///
+    /// Every field name here is one Resend's API dictates, and a typo in any of
+    /// them fails only at runtime, against a live key, with a 4xx that would be
+    /// easy to misread as a credential or domain-verification problem. `to` in
+    /// particular must serialise as an array, not a bare string.
+    #[test]
+    fn serialises_to_the_shape_resend_expects() {
+        let request = ResendRequest {
+            from: "Tracker <notifications@tracker.example.org>",
+            to: ["vendor@acme.com"],
+            subject: "Action Tracker test email",
+            html: "<p>hello</p>",
+            text: "hello",
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(json["from"], "Tracker <notifications@tracker.example.org>");
+        assert_eq!(json["subject"], "Action Tracker test email");
+        assert_eq!(json["html"], "<p>hello</p>");
+        assert_eq!(json["text"], "hello");
+
+        // Array, single element — not a string.
+        assert!(json["to"].is_array(), "`to` must serialise as an array");
+        assert_eq!(json["to"][0], "vendor@acme.com");
+        assert_eq!(json["to"].as_array().unwrap().len(), 1);
+
+        // Exactly these fields, no more and no fewer. Compared as a sorted set
+        // because `serde_json::Value` orders keys alphabetically, and key order
+        // carries no meaning in JSON anyway.
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["from", "html", "subject", "text", "to"]);
+    }
+}
