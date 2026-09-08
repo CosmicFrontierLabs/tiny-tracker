@@ -27,6 +27,12 @@ use crate::AppState;
 
 pub(super) const CLEAR_TOKEN_COOKIE: &str = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 
+// These two helpers return an axum `Response` as their error, which is the
+// idiomatic way to short-circuit a handler with a ready-made HTTP reply. Since
+// Rust 1.98 clippy flags that as a large `Err` variant. Boxing it would ripple
+// `*resp` derefs through every route module for no measurable gain on a path
+// that only runs when a request is already failing.
+#[allow(clippy::result_large_err)]
 /// Acquire a pooled database connection, mapping pool failures to a 500 response.
 pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnection>, Response> {
     state.pool.get().await.map_err(|_| {
@@ -38,6 +44,7 @@ pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnectio
     })
 }
 
+#[allow(clippy::result_large_err)] // see note on `get_conn`
 /// Ensure an action item exists, returning a 404 response if it does not.
 pub(super) async fn ensure_item_exists(
     conn: &mut AsyncPgConnection,
