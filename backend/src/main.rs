@@ -20,7 +20,8 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use routes::{
-    activity, auth, categories, health, items, notes, status, users, vendor_portal, vendors,
+    activity, auth, categories, health, items, mail_test, notes, status, users, vendor_portal,
+    vendors,
 };
 
 pub type DbPool = Pool<AsyncPgConnection>;
@@ -213,6 +214,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/items/:item_id/status", post(status::change))
         // User routes
         .route("/api/users", get(users::list))
+        // Mail diagnostics
+        .route("/api/mail/test", post(mail_test::send))
         // Category routes
         .route("/api/categories", get(categories::list_all))
         .route(

@@ -76,7 +76,7 @@ fn generate_nonce() -> String {
 
 /// Split an address into its domain, lowercased. `None` if it is not shaped like
 /// an email address.
-fn email_domain(email: &str) -> Option<String> {
+pub(super) fn email_domain(email: &str) -> Option<String> {
     let trimmed = email.trim();
     let (local, domain) = trimmed.rsplit_once('@')?;
     if local.is_empty() || domain.is_empty() || domain.contains('@') || !domain.contains('.') {

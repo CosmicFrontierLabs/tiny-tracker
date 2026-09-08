@@ -35,6 +35,10 @@ impl Mailer for LogMailer {
     }
 
     fn name(&self) -> &'static str {
-        "log (messages are written to the log, not delivered)"
+        "log"
+    }
+
+    fn delivers(&self) -> bool {
+        false
     }
 }

@@ -3,6 +3,7 @@ pub mod auth;
 pub mod categories;
 pub mod health;
 pub mod items;
+pub mod mail_test;
 pub mod notes;
 pub mod status;
 pub mod users;
