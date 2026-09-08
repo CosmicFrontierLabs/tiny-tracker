@@ -1,9 +1,20 @@
-//! Google Workspace SMTP transport.
+//! Google Workspace SMTP transport, in either of two authorisation modes.
 //!
-//! Expects a dedicated licensed Workspace user (aliases and groups cannot hold an
-//! app password) with 2-step verification on and an app password issued to it.
-//! Enable DKIM for the sending subdomain separately in the Admin Console — it is
-//! configured per-domain and is not inherited from the primary domain.
+//! **IP-authorised relay** (`SMTP_USER`/`SMTP_PASSWORD` both unset): point
+//! `SMTP_HOST` at `smtp-relay.gmail.com` and allowlist the sending host's static
+//! egress IP under Admin → Apps → Google Workspace → Gmail → Routing → SMTP
+//! relay service. No credential is involved, so the sender address only has to
+//! be one the relay accepts for the domain — an alias is fine.
+//!
+//! **Authenticated SMTP** (both set): `SMTP_USER` must be a dedicated *licensed*
+//! Workspace user with 2-step verification on and an app password issued to it.
+//! Aliases and groups cannot hold an app password, so they cannot be used in
+//! this mode — but that restriction is specific to app passwords and does not
+//! apply to the relay mode above.
+//!
+//! Either way, enable DKIM for the sending subdomain separately in the Admin
+//! Console — it is configured per-domain and is not inherited from the primary
+//! domain.
 
 use axum::async_trait;
 use lettre::message::{header::ContentType, Mailbox, MultiPart, SinglePart};
