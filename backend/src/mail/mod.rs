@@ -12,6 +12,8 @@
 //! server output without any mail credentials.
 
 use axum::async_trait;
+use chrono::{DateTime, Utc};
+use std::sync::RwLock;
 
 mod log_mailer;
 mod resend;
@@ -126,4 +128,125 @@ pub fn build(config: &MailConfig) -> anyhow::Result<std::sync::Arc<dyn Mailer>> 
         );
     }
     Ok(mailer)
+}
+
+/// Records the outcome of the most recent send attempt.
+///
+/// An unverified sending domain produces a perfectly healthy container that
+/// rejects every message — no crash, no restart, and with no bounce webhook, no
+/// signal anywhere. This exists so that state is visible in the UI the first
+/// time anyone tries to send, rather than discovered by a vendor who never got
+/// their link.
+#[derive(Default)]
+pub struct MailHealthTracker {
+    last: RwLock<Option<Attempt>>,
+}
+
+struct Attempt {
+    at: DateTime<Utc>,
+    /// `None` on success.
+    error: Option<String>,
+}
+
+impl MailHealthTracker {
+    pub fn record_success(&self) {
+        self.write(None);
+    }
+
+    pub fn record_failure(&self, error: impl Into<String>) {
+        self.write(Some(error.into()));
+    }
+
+    fn write(&self, error: Option<String>) {
+        if let Ok(mut guard) = self.last.write() {
+            *guard = Some(Attempt {
+                at: Utc::now(),
+                error,
+            });
+        }
+    }
+
+    /// Current status. `delivers` comes from the active transport, so the `log`
+    /// backend reports NotDelivering regardless of how many sends "succeeded".
+    pub fn status(&self, backend: &str, delivers: bool) -> shared::MailStatus {
+        let guard = self.last.read().ok();
+        let last = guard.as_ref().and_then(|g| g.as_ref());
+
+        let health = if !delivers {
+            shared::MailHealth::NotDelivering
+        } else {
+            match last {
+                None => shared::MailHealth::Untested,
+                Some(a) if a.error.is_some() => shared::MailHealth::Failing,
+                Some(_) => shared::MailHealth::Ok,
+            }
+        };
+
+        shared::MailStatus {
+            backend: backend.to_string(),
+            health,
+            last_attempt_at: last.map(|a| a.at),
+            last_error: last.and_then(|a| a.error.clone()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MailHealthTracker;
+    use shared::MailHealth;
+
+    #[test]
+    fn a_real_backend_with_no_attempts_is_untested_not_ok() {
+        let tracker = MailHealthTracker::default();
+        let status = tracker.status("resend", true);
+        assert_eq!(status.health, MailHealth::Untested);
+        assert!(status.last_attempt_at.is_none());
+    }
+
+    #[test]
+    fn the_log_backend_never_reports_ok_however_many_sends_succeed() {
+        // The masking that matters: the log backend "succeeds" every time while
+        // delivering nothing, so transport capability must override attempt
+        // history rather than the other way round.
+        let tracker = MailHealthTracker::default();
+        tracker.record_success();
+        tracker.record_success();
+        let status = tracker.status("log", false);
+        assert_eq!(status.health, MailHealth::NotDelivering);
+        // The attempt is still recorded, just not treated as evidence of health.
+        assert!(status.last_attempt_at.is_some());
+    }
+
+    #[test]
+    fn a_failure_surfaces_the_verbatim_error() {
+        let tracker = MailHealthTracker::default();
+        tracker.record_failure("403 domain is not verified");
+        let status = tracker.status("resend", true);
+        assert_eq!(status.health, MailHealth::Failing);
+        assert_eq!(
+            status.last_error.as_deref(),
+            Some("403 domain is not verified")
+        );
+    }
+
+    #[test]
+    fn success_reports_ok_and_clears_the_previous_error() {
+        let tracker = MailHealthTracker::default();
+        tracker.record_failure("403 domain is not verified");
+        tracker.record_success();
+        let status = tracker.status("resend", true);
+        assert_eq!(status.health, MailHealth::Ok);
+        assert!(status.last_error.is_none());
+    }
+
+    #[test]
+    fn a_later_failure_overrides_an_earlier_success() {
+        let tracker = MailHealthTracker::default();
+        tracker.record_success();
+        tracker.record_failure("timed out");
+        let status = tracker.status("smtp", true);
+        assert_eq!(status.health, MailHealth::Failing);
+        assert_eq!(status.last_error.as_deref(), Some("timed out"));
+    }
 }

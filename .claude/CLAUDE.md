@@ -100,6 +100,28 @@ this means missing mail config prevents startup entirely.
 to a human must check it, or a "sent" result is a lie. The staff Test Email
 dialog (`POST /api/mail/test`) relies on this.
 
+### Mail health has four states, and "untested" is one of them
+
+A sending domain that is not yet verified produces a **perfectly healthy
+container that rejects every message** — no crash, no restart, and with no
+bounce webhook, no signal anywhere. That is worse than a crash-loop, because a
+crash-loop is loud. Startup validation cannot catch it: the address is
+syntactically fine, and a `GET /domains` probe would 401 for correctly scoped
+send-only API keys.
+
+So `MailHealthTracker` records the outcome of every send — both `POST
+/api/mail/test` and the vendor portal's background send — and `GET
+/api/mail/status` reports one of `not_delivering`, `untested`, `failing`, `ok`.
+The staff UI banners the first three.
+
+`untested` exists because a freshly deployed portal that has never attempted a
+send is not healthy, it is unproven, and it must not render the same as one
+known to work. Transport capability overrides attempt history, so the `log`
+backend reports `not_delivering` no matter how many sends "succeed".
+
+When changing mail config, **gate on a real send, never on the container coming
+up.**
+
 SMTP credentials are optional: Workspace's relay can authorise by static egress
 IP, so omitting **both** `SMTP_USER` and `SMTP_PASSWORD` is a supported mode.
 Setting exactly one is rejected as a typo.
@@ -134,6 +156,7 @@ All `/api/*` routes require authentication (JWT cookie).
 | POST | `/api/items/:id/status` | Change status |
 | GET | `/api/users` | List users |
 | POST | `/api/mail/test` | Send a test email (staff diagnostics) |
+| GET | `/api/mail/status` | Mail transport health (staff banner) |
 | GET | `/api/categories` | List all categories |
 | GET/POST | `/api/vendors/:id/categories` | List / create categories for vendor |
 | GET | `/go/:item_id` | Deep link redirect |

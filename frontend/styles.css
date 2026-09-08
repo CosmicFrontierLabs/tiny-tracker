@@ -1257,3 +1257,24 @@ main {
     color: #9c640c;
     border: 1px solid #f5cba7;
 }
+
+/* Mail health banner */
+.mail-banner {
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.mail-banner-warn {
+    background: #fef5e7;
+    color: #9c640c;
+    border: 1px solid #f5cba7;
+}
+
+.mail-banner-error {
+    background: #fdedec;
+    color: #a93226;
+    border: 1px solid #f5b7b1;
+}

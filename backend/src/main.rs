@@ -31,6 +31,7 @@ pub struct AppState {
     pub pool: DbPool,
     pub config: AppConfig,
     pub mailer: Arc<dyn mail::Mailer>,
+    pub mail_health: Arc<mail::MailHealthTracker>,
 }
 
 #[derive(Clone)]
@@ -169,6 +170,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         config: config.clone(),
         mailer,
+        mail_health: Arc::new(mail::MailHealthTracker::default()),
     };
 
     // Build router
@@ -216,6 +218,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/users", get(users::list))
         // Mail diagnostics
         .route("/api/mail/test", post(mail_test::send))
+        .route("/api/mail/status", get(mail_test::status))
         // Category routes
         .route("/api/categories", get(categories::list_all))
         .route(

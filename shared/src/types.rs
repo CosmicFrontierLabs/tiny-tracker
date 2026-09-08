@@ -458,3 +458,32 @@ pub struct TestEmailResponse {
     /// it. The UI must say so, or a green result is a lie.
     pub delivered: bool,
 }
+
+/// Operator-facing health of the mail transport.
+///
+/// Deliberately four states, not two. A freshly deployed portal that has never
+/// attempted a send is not healthy, it is *untested* — and an unverified sending
+/// domain boots cleanly and then rejects every message, so "no evidence" must
+/// never be presented as "evidence of success".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailHealth {
+    /// The `log` backend: accepts messages and writes them to the log unsent.
+    NotDelivering,
+    /// A real transport, but nothing has been sent yet.
+    Untested,
+    /// The most recent attempt failed.
+    Failing,
+    /// The most recent attempt succeeded.
+    Ok,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MailStatus {
+    /// Transport id: `smtp`, `resend` or `log`.
+    pub backend: String,
+    pub health: MailHealth,
+    pub last_attempt_at: Option<DateTime<Utc>>,
+    /// Verbatim transport error from the last failure, for diagnosis.
+    pub last_error: Option<String>,
+}

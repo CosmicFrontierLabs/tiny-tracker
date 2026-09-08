@@ -18,7 +18,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use shared::{ApiError, SendTestEmail, TestEmailResponse};
+use shared::{ApiError, MailStatus, SendTestEmail, TestEmailResponse};
 use std::sync::Arc;
 
 use crate::mail::Email;
@@ -70,13 +70,17 @@ pub async fn send(
     };
 
     match mailer.send(email).await {
-        Ok(()) => Json(TestEmailResponse {
-            recipient,
-            backend,
-            delivered: delivers,
-        })
-        .into_response(),
+        Ok(()) => {
+            state.mail_health.record_success();
+            Json(TestEmailResponse {
+                recipient,
+                backend,
+                delivered: delivers,
+            })
+            .into_response()
+        }
         Err(e) => {
+            state.mail_health.record_failure(e.to_string());
             tracing::error!("Mail test to {} failed: {e:#}", recipient);
             // Surface the transport error verbatim — diagnosing the transport is
             // the reason this endpoint exists, and it is staff-only.
@@ -90,4 +94,13 @@ pub async fn send(
                 .into_response()
         }
     }
+}
+
+/// Current mail transport health, for the staff UI banner.
+pub async fn status(State(state): State<Arc<AppState>>, _auth: AuthUser) -> Json<MailStatus> {
+    Json(
+        state
+            .mail_health
+            .status(state.mailer.name(), state.mailer.delivers()),
+    )
 }
