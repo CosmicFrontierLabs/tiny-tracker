@@ -168,11 +168,20 @@ pub async fn request_link(
 
     let email_message = build_link_email(&email, &links);
     let mailer = state.mailer.clone();
+    let mail_health = state.mail_health.clone();
     // Send outside the request path: delivery latency should not be observable to
     // a caller probing for valid addresses.
+    //
+    // The outcome is recorded rather than only logged. This is the path where a
+    // rejected send is otherwise invisible — the vendor is told a link is on its
+    // way no matter what, so without this the failure reaches nobody.
     tokio::spawn(async move {
-        if let Err(e) = mailer.send(email_message).await {
-            tracing::error!("Failed to send vendor portal link: {e}");
+        match mailer.send(email_message).await {
+            Ok(()) => mail_health.record_success(),
+            Err(e) => {
+                mail_health.record_failure(e.to_string());
+                tracing::error!("Failed to send vendor portal link: {e:#}");
+            }
         }
     });
 

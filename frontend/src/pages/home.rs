@@ -48,7 +48,7 @@ fn status_ord(s: &str) -> u8 {
     }
 }
 
-use crate::components::{ActivitySidebar, Header, MailTestModal};
+use crate::components::{ActivitySidebar, Header, MailBanner, MailTestModal};
 use crate::pages::item_detail::ItemDetailModal;
 use crate::pages::item_form::NewItemModal;
 use crate::pages::manage_vendors::ManageVendorsModal;
@@ -352,6 +352,7 @@ pub fn home(props: &HomeProps) -> Html {
         <>
             <Header />
             <main>
+                <MailBanner />
                 <div class="page-header">
                     <h2>{ "Action Items" }</h2>
                     <div class="header-actions">
