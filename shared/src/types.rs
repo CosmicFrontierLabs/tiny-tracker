@@ -439,3 +439,22 @@ pub struct VendorAllowedDomainResponse {
 pub struct CreateVendorAllowedDomain {
     pub domain: String,
 }
+
+// ============================================================================
+// Mail diagnostics
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SendTestEmail {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TestEmailResponse {
+    pub recipient: String,
+    /// Configured transport id: `smtp`, `resend` or `log`.
+    pub backend: String,
+    /// False for the `log` backend, which accepts the message without sending
+    /// it. The UI must say so, or a green result is a lie.
+    pub delivered: bool,
+}

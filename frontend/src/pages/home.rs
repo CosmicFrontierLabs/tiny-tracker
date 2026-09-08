@@ -48,7 +48,7 @@ fn status_ord(s: &str) -> u8 {
     }
 }
 
-use crate::components::{ActivitySidebar, Header};
+use crate::components::{ActivitySidebar, Header, MailTestModal};
 use crate::pages::item_detail::ItemDetailModal;
 use crate::pages::item_form::NewItemModal;
 use crate::pages::manage_vendors::ManageVendorsModal;
@@ -109,6 +109,7 @@ pub fn home(props: &HomeProps) -> Html {
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
     let show_manage_vendors_modal = use_state(|| false);
+    let show_mail_test_modal = use_state(|| false);
     let show_completed = use_state(|| false);
     let sort_column = use_state(|| SortColumn::Id);
     let sort_direction = use_state(|| SortDirection::Asc);
@@ -221,6 +222,20 @@ pub fn home(props: &HomeProps) -> Html {
         let show_manage_vendors_modal = show_manage_vendors_modal.clone();
         Callback::from(move |_| {
             show_manage_vendors_modal.set(true);
+        })
+    };
+
+    let on_mail_test_click = {
+        let show_mail_test_modal = show_mail_test_modal.clone();
+        Callback::from(move |_| {
+            show_mail_test_modal.set(true);
+        })
+    };
+
+    let on_mail_test_close = {
+        let show_mail_test_modal = show_mail_test_modal.clone();
+        Callback::from(move |_| {
+            show_mail_test_modal.set(false);
         })
     };
 
@@ -340,6 +355,9 @@ pub fn home(props: &HomeProps) -> Html {
                 <div class="page-header">
                     <h2>{ "Action Items" }</h2>
                     <div class="header-actions">
+                        <button type="button" class="btn btn-secondary" onclick={on_mail_test_click}>
+                            { "Test Email" }
+                        </button>
                         <button type="button" class="btn btn-secondary" onclick={on_manage_vendors_click}>
                             { "Manage Vendors" }
                         </button>
@@ -404,6 +422,10 @@ pub fn home(props: &HomeProps) -> Html {
 
                 if *show_manage_vendors_modal {
                     <ManageVendorsModal on_close={on_manage_vendors_close} />
+                }
+
+                if *show_mail_test_modal {
+                    <MailTestModal on_close={on_mail_test_close} />
                 }
 
                 if let Some(item_id) = (*selected_item_id).clone() {

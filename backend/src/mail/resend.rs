@@ -32,6 +32,15 @@ impl ResendMailer {
             anyhow::anyhow!("RESEND_API_KEY must be set when MAIL_BACKEND=resend")
         })?;
 
+        // Validate at startup so a malformed MAIL_FROM fails here rather than as
+        // an opaque API rejection on the first send. The parsed value is
+        // discarded: Resend wants the raw header string, and the address must
+        // belong to a domain verified in Resend regardless.
+        config
+            .from
+            .parse::<lettre::message::Mailbox>()
+            .map_err(|e| anyhow::anyhow!("MAIL_FROM is not a valid address: {e}"))?;
+
         Ok(Self {
             client: reqwest::Client::new(),
             api_key,

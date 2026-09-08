@@ -89,6 +89,21 @@ SHA-256 of the nonce is stored. `/vendor/verify` claims it with a conditional
 `VendorAuth` extractor reloads the vendor on every request and rejects archived
 ones, so archiving a vendor cuts live sessions immediately.
 
+### Mail transports are swappable and validated at startup
+
+`MAIL_BACKEND` selects `smtp`, `resend`, or `log` behind the `Mailer` trait.
+`mail::build` fails fast if the chosen backend's config is incomplete, so a
+misconfiguration stops the container rather than silently dropping mail — note
+this means missing mail config prevents startup entirely.
+
+`Mailer::delivers()` is false for the `log` backend. Anything reporting success
+to a human must check it, or a "sent" result is a lie. The staff Test Email
+dialog (`POST /api/mail/test`) relies on this.
+
+SMTP credentials are optional: Workspace's relay can authorise by static egress
+IP, so omitting **both** `SMTP_USER` and `SMTP_PASSWORD` is a supported mode.
+Setting exactly one is rejected as a typo.
+
 ### API responses use shared types, not `json!`
 Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
 
@@ -112,6 +127,7 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET | `/api/items/:id/history` | Status history |
 | POST | `/api/items/:id/status` | Change status |
 | GET | `/api/users` | List users |
+| POST | `/api/mail/test` | Send a test email (staff diagnostics) |
 | GET | `/api/categories` | List all categories |
 | GET/POST | `/api/vendors/:id/categories` | List / create categories for vendor |
 | GET | `/go/:item_id` | Deep link redirect |
@@ -146,7 +162,7 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 | `MAIL_BACKEND` | No | `smtp` \| `resend` \| `log` (default `log` in dev, else `smtp`) |
 | `MAIL_FROM` | Prod only | From header, e.g. `Tracker <notifications@tracker.example.org>` |
 | `SMTP_HOST` / `SMTP_PORT` | No | Default `smtp.gmail.com` / `587` |
-| `SMTP_USER` / `SMTP_PASSWORD` | If smtp | Workspace user + app password |
+| `SMTP_USER` / `SMTP_PASSWORD` | No | Both for authenticated SMTP; **neither** for IP-authorised relay. Exactly one is a startup error |
 | `RESEND_API_KEY` | If resend | Resend API key |
 
 ## Deployment

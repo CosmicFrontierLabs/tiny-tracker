@@ -34,8 +34,15 @@ pub struct Email {
 pub trait Mailer: Send + Sync {
     async fn send(&self, email: Email) -> anyhow::Result<()>;
 
-    /// Human-readable transport name, for startup logging.
+    /// Short transport id (`smtp`, `resend`, `log`). Shown to staff in the mail
+    /// test dialog, so keep it terse.
     fn name(&self) -> &'static str;
+
+    /// False when the transport only pretends to send. Callers must surface this,
+    /// or the `log` backend makes a test look successful while delivering nothing.
+    fn delivers(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +111,13 @@ pub fn build(config: &MailConfig) -> anyhow::Result<std::sync::Arc<dyn Mailer>> 
         MailBackend::Resend => std::sync::Arc::new(ResendMailer::new(config)?),
         MailBackend::Log => std::sync::Arc::new(LogMailer::new(config)),
     };
-    tracing::info!("Mail transport: {}", mailer.name());
+    if mailer.delivers() {
+        tracing::info!("Mail transport: {}", mailer.name());
+    } else {
+        tracing::warn!(
+            "Mail transport: {} - messages are written to the log, NOT delivered",
+            mailer.name()
+        );
+    }
     Ok(mailer)
 }
