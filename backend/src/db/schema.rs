@@ -71,6 +71,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    vendor_allowed_domains (id) {
+        id -> Int4,
+        vendor_id -> Int4,
+        #[max_length = 255]
+        domain -> Varchar,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    vendor_magic_links (id) {
+        id -> Int4,
+        vendor_id -> Int4,
+        #[max_length = 255]
+        email -> Varchar,
+        #[max_length = 64]
+        token_hash -> Varchar,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+        consumed_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
     vendors (id) {
         id -> Int4,
         #[max_length = 10]
@@ -91,6 +115,8 @@ diesel::joinable!(notes -> action_items (action_item_id));
 diesel::joinable!(notes -> users (author_id));
 diesel::joinable!(status_history -> action_items (action_item_id));
 diesel::joinable!(status_history -> users (changed_by_id));
+diesel::joinable!(vendor_allowed_domains -> vendors (vendor_id));
+diesel::joinable!(vendor_magic_links -> vendors (vendor_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     action_items,
@@ -98,5 +124,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     notes,
     status_history,
     users,
+    vendor_allowed_domains,
+    vendor_magic_links,
     vendors,
 );

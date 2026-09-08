@@ -1,4 +1,5 @@
 mod db;
+mod mail;
 mod models;
 mod routes;
 mod static_files;
@@ -18,7 +19,9 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use routes::{activity, auth, categories, health, items, notes, status, users, vendors};
+use routes::{
+    activity, auth, categories, health, items, notes, status, users, vendor_portal, vendors,
+};
 
 pub type DbPool = Pool<AsyncPgConnection>;
 
@@ -26,6 +29,7 @@ pub type DbPool = Pool<AsyncPgConnection>;
 pub struct AppState {
     pub pool: DbPool,
     pub config: AppConfig,
+    pub mailer: Arc<dyn mail::Mailer>,
 }
 
 #[derive(Clone)]
@@ -37,6 +41,7 @@ pub struct AppConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub allowed_email_domains: Vec<String>,
+    pub mail: mail::MailConfig,
 }
 
 impl AppConfig {
@@ -67,6 +72,7 @@ impl AppConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            mail: mail::MailConfig::from_env(dev_mode),
         }
     }
 }
@@ -103,12 +109,23 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "backend=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "action_tracker=debug,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     static_files::verify_assets_embedded();
+
+    // Pin the rustls crypto provider explicitly. Both the database TLS stack and
+    // the SMTP mailer use rustls, and if a future dependency pulls in a second
+    // provider rustls panics at first use rather than choosing. Failing here, at
+    // startup, is better than failing on the first outbound connection.
+    if rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .is_err()
+    {
+        tracing::debug!("rustls crypto provider was already installed");
+    }
 
     let config = AppConfig::from_env();
 
@@ -145,9 +162,12 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Database connection verified");
     }
 
+    let mailer = mail::build(&config.mail)?;
+
     let state = AppState {
         pool,
         config: config.clone(),
+        mailer,
     };
 
     // Build router
@@ -159,9 +179,23 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/callback", get(auth::callback))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        // Vendor portal (read-only, magic-link authenticated)
+        .route("/vendor/request-link", post(vendor_portal::request_link))
+        .route("/vendor/verify", get(vendor_portal::verify))
+        .route("/vendor/logout", post(vendor_portal::logout))
+        .route("/vendor/api/me", get(vendor_portal::me))
+        .route("/vendor/api/items", get(vendor_portal::list_items))
         // Vendor routes
         .route("/api/vendors", get(vendors::list).post(vendors::create))
         .route("/api/vendors/:id", get(vendors::get).patch(vendors::update))
+        .route(
+            "/api/vendors/:id/allowed-domains",
+            get(vendor_portal::list_domains).post(vendor_portal::add_domain),
+        )
+        .route(
+            "/api/vendors/:id/allowed-domains/:domain_id",
+            axum::routing::delete(vendor_portal::delete_domain),
+        )
         // Item routes
         .route("/api/items", get(items::list_all))
         .route(
@@ -202,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
                     axum::http::Method::GET,
                     axum::http::Method::POST,
                     axum::http::Method::PATCH,
+                    axum::http::Method::DELETE,
                 ])
                 .allow_headers([axum::http::header::CONTENT_TYPE])
         })

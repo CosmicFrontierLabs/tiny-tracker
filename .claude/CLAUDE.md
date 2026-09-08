@@ -67,6 +67,28 @@ Action items don't have a `status` column. Current status = most recent entry in
 ### Action item IDs are composite
 Format: `{VENDOR_PREFIX}-{NUMBER}` (e.g. `AD-001`). Generated server-side using the vendor's `next_number` counter.
 
+### Vendor portal tokens are a separate credential family
+
+Vendor contacts get a read-only view of one vendor's open items via an emailed
+magic link. Three things keep that separate from staff access, and all three
+matter:
+
+1. **Different signing key.** Portal JWTs are signed with a key derived from
+   `JWT_SECRET` (`vendor_jwt_secret()`), so a portal token cannot validate as a
+   staff token or vice versa.
+2. **Explicit scope claim.** `Claims.scope` must be `Staff` for `/api/*`, and
+   `VendorClaims.scope` must be `VendorPortal` for `/vendor/api/*`. `scope`
+   defaults to `Staff` when absent so cookies issued before the portal existed
+   keep working.
+3. **Cookie path.** The portal cookie is `vendor_token` scoped to `Path=/vendor`,
+   so browsers never attach it to a staff request.
+
+The emailed URL carries a single-use nonce, not the session token — only the
+SHA-256 of the nonce is stored. `/vendor/verify` claims it with a conditional
+`UPDATE ... RETURNING`, so concurrent clicks cannot both succeed. The
+`VendorAuth` extractor reloads the vendor on every request and rejects archived
+ones, so archiving a vendor cuts live sessions immediately.
+
 ### API responses use shared types, not `json!`
 Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
 
@@ -93,6 +115,20 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET | `/api/categories` | List all categories |
 | GET/POST | `/api/vendors/:id/categories` | List / create categories for vendor |
 | GET | `/go/:item_id` | Deep link redirect |
+| GET/POST | `/api/vendors/:id/allowed-domains` | List / add portal email domains |
+| DELETE | `/api/vendors/:id/allowed-domains/:domain_id` | Revoke a portal domain |
+
+### Vendor Portal Routes
+
+Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff token.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/vendor/request-link` | none | Email a sign-in link |
+| GET | `/vendor/verify` | nonce | Consume link, set portal cookie |
+| POST | `/vendor/logout` | none | Clear portal cookie |
+| GET | `/vendor/api/me` | portal | Current vendor + session expiry |
+| GET | `/vendor/api/items` | portal | That vendor's open items |
 
 ## Environment Variables
 
@@ -107,6 +143,11 @@ All `/api/*` routes require authentication (JWT cookie).
 | `ALLOWED_EMAIL_DOMAINS` | No | Comma-separated allowed domains |
 | `DEV_MODE` | No | Set to `true` to bypass OAuth |
 | `DEV_USER_ID` | No | User ID for dev mode |
+| `MAIL_BACKEND` | No | `smtp` \| `resend` \| `log` (default `log` in dev, else `smtp`) |
+| `MAIL_FROM` | Prod only | From header, e.g. `Tracker <notifications@tracker.example.org>` |
+| `SMTP_HOST` / `SMTP_PORT` | No | Default `smtp.gmail.com` / `587` |
+| `SMTP_USER` / `SMTP_PASSWORD` | If smtp | Workspace user + app password |
+| `RESEND_API_KEY` | If resend | Resend API key |
 
 ## Deployment
 

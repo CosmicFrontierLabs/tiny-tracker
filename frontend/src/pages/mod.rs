@@ -4,3 +4,4 @@ pub mod item_form;
 pub mod login;
 pub mod manage_vendors;
 pub mod status_style;
+pub mod vendor_portal;

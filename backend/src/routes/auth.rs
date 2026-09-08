@@ -16,7 +16,7 @@ use crate::db::schema::users;
 use crate::models::{NewUser, User};
 use crate::AppState;
 
-use super::{AuthUser, Claims};
+use super::{AuthUser, Claims, TokenScope};
 
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
@@ -316,6 +316,7 @@ fn create_jwt(secret: &str, user: &User) -> String {
         user_id: user.id,
         iat: now.timestamp() as usize,
         exp: exp.timestamp() as usize,
+        scope: TokenScope::Staff,
     };
 
     encode(

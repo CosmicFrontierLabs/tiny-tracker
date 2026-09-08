@@ -176,3 +176,36 @@ pub struct NewNote {
     pub author_id: i32,
     pub content: String,
 }
+
+// ============================================================================
+// VendorAllowedDomain
+// ============================================================================
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = vendor_allowed_domains)]
+pub struct VendorAllowedDomain {
+    pub id: i32,
+    pub vendor_id: i32,
+    pub domain: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = vendor_allowed_domains)]
+pub struct NewVendorAllowedDomain {
+    pub vendor_id: i32,
+    pub domain: String,
+}
+
+// ============================================================================
+// VendorMagicLink
+// ============================================================================
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = vendor_magic_links)]
+pub struct NewVendorMagicLink {
+    pub vendor_id: i32,
+    pub email: String,
+    pub token_hash: String,
+    pub expires_at: DateTime<Utc>,
+}

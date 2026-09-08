@@ -29,8 +29,22 @@ chrono = { workspace = true }
 
 # Auth
 jsonwebtoken = "9"
+sha2 = "0.10"
 oauth2 = "4"
 reqwest = { version = "0.12", features = ["json"] }
+
+# Email
+# Note: "tokio1-rustls" + "aws-lc-rs" rather than the bundled "tokio1-rustls-tls",
+# which forces the `ring` provider. rustls refuses to pick between two providers
+# at runtime, and the rest of the stack already uses aws-lc-rs.
+lettre = { version = "0.11", default-features = false, features = [
+    "tokio1-rustls",
+    "aws-lc-rs",
+    "webpki-roots",
+    "smtp-transport",
+    "builder",
+    "hostname",
+] }
 
 # Config & logging
 dotenvy = "0.15"
