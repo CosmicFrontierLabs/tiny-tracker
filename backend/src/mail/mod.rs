@@ -79,6 +79,9 @@ pub struct MailConfig {
     pub smtp_port: u16,
     pub smtp_user: Option<String>,
     pub smtp_password: Option<String>,
+    /// Domain to send in the SMTP EHLO command. Defaults to the `MAIL_FROM`
+    /// domain, which is what Google's relay wants to see.
+    pub smtp_helo_name: Option<String>,
     pub resend_api_key: Option<String>,
 }
 
@@ -95,6 +98,9 @@ impl MailConfig {
                 .unwrap_or(587),
             smtp_user: std::env::var("SMTP_USER").ok().filter(|s| !s.is_empty()),
             smtp_password: std::env::var("SMTP_PASSWORD")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            smtp_helo_name: std::env::var("SMTP_HELO_NAME")
                 .ok()
                 .filter(|s| !s.is_empty()),
             resend_api_key: std::env::var("RESEND_API_KEY")

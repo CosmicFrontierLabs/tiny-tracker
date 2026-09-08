@@ -19,6 +19,7 @@
 use axum::async_trait;
 use lettre::message::{header::ContentType, Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::extension::ClientId;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
 use super::{Email, MailConfig, Mailer};
@@ -60,9 +61,26 @@ impl SmtpMailer {
             ),
         };
 
+        // EHLO name. lettre defaults to `ClientId::hostname()`, which inside a
+        // container is the container ID — a hex string, not a domain. Google's
+        // relay names the EHLO domain as one of the two ways it identifies a
+        // sending domain, so leaving it as a container ID risks a 550 on exactly
+        // the credential-less path where SMTP AUTH is not there to identify us.
+        // Default to the MAIL_FROM domain, which is the right answer nearly
+        // always, and let an operator override it.
+        let helo_name = match &config.smtp_helo_name {
+            Some(name) => {
+                validate_helo_name(name)?;
+                name.clone()
+            }
+            None => from.email.domain().to_string(),
+        };
+        tracing::info!("SMTP EHLO name: {helo_name}");
+
         let mut builder = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&config.smtp_host)
             .map_err(|e| anyhow::anyhow!("Failed to configure SMTP relay: {e}"))?
-            .port(config.smtp_port);
+            .port(config.smtp_port)
+            .hello_name(ClientId::Domain(helo_name));
 
         if let Some(credentials) = credentials {
             builder = builder.credentials(credentials);
@@ -73,6 +91,17 @@ impl SmtpMailer {
             from,
         })
     }
+}
+
+/// Reject an EHLO name that is obviously not a domain, at startup rather than on
+/// first send.
+fn validate_helo_name(name: &str) -> anyhow::Result<()> {
+    if name.contains(' ') || name.contains('@') || !name.contains('.') {
+        anyhow::bail!(
+            "SMTP_HELO_NAME must be a bare domain such as tracker.example.org, got {name:?}"
+        );
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -107,5 +136,26 @@ impl Mailer for SmtpMailer {
 
     fn name(&self) -> &'static str {
         "smtp"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_helo_name;
+
+    #[test]
+    fn accepts_bare_domains() {
+        assert!(validate_helo_name("cosmicfrontier.org").is_ok());
+        assert!(validate_helo_name("tracker.cosmicfrontier.org").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_domains() {
+        // A bare hostname is the failure this guard exists for: lettre's default
+        // is the container ID, which has no dot.
+        assert!(validate_helo_name("a1b2c3d4e5f6").is_err());
+        assert!(validate_helo_name("not a domain").is_err());
+        assert!(validate_helo_name("user@example.org").is_err());
+        assert!(validate_helo_name("").is_err());
     }
 }
