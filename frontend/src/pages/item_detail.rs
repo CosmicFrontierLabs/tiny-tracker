@@ -48,6 +48,10 @@ pub struct ItemDetailModalProps {
     pub item_id: String,
     pub users: Vec<shared::User>,
     pub categories: Vec<shared::CategoryResponse>,
+    /// Shows the delete control. Convenience only — the server rejects a delete
+    /// from a non-admin regardless of what this says.
+    #[prop_or_default]
+    pub is_admin: bool,
     pub on_close: Callback<()>,
 }
 
@@ -135,6 +139,14 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let changing_priority = use_state(|| false);
     let changing_due_date = use_state(|| false);
     let changing_category = use_state(|| false);
+
+    // Deleting hides the item from everyone at once — staff list, item view and
+    // the vendor portal — so it is a two-click action: the button arms itself
+    // first and only the second click sends the request. The item is recoverable
+    // by an admin afterwards, but not from this UI.
+    let confirming_delete = use_state(|| false);
+    let deleting = use_state(|| false);
+    let delete_error = use_state(|| None::<String>);
 
     // Editing states
     let editing_title = use_state(|| false);
@@ -298,6 +310,69 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
         let on_close = props.on_close.clone();
         Callback::from(move |_| {
             on_close.emit(());
+        })
+    };
+
+    let on_delete_click = {
+        let confirming_delete = confirming_delete.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_| {
+            delete_error.set(None);
+            confirming_delete.set(true);
+        })
+    };
+
+    let on_delete_cancel = {
+        let confirming_delete = confirming_delete.clone();
+        Callback::from(move |_| {
+            confirming_delete.set(false);
+        })
+    };
+
+    let on_delete_confirm = {
+        let item_id = item_id.clone();
+        let deleting = deleting.clone();
+        let delete_error = delete_error.clone();
+        let confirming_delete = confirming_delete.clone();
+        let on_close = props.on_close.clone();
+
+        Callback::from(move |_| {
+            let item_id = item_id.clone();
+            let deleting = deleting.clone();
+            let delete_error = delete_error.clone();
+            let confirming_delete = confirming_delete.clone();
+            let on_close = on_close.clone();
+
+            deleting.set(true);
+            delete_error.set(None);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = Request::delete(&format!("/api/items/{}", item_id))
+                    .send()
+                    .await;
+
+                match result {
+                    // Closing is what refreshes the list behind the modal, so the
+                    // deleted row disappears with it.
+                    Ok(resp) if resp.ok() => on_close.emit(()),
+                    Ok(resp) if resp.status() == 403 => {
+                        delete_error
+                            .set(Some("Only an administrator can delete items.".to_string()));
+                        confirming_delete.set(false);
+                        deleting.set(false);
+                    }
+                    Ok(resp) => {
+                        delete_error.set(Some(format!("Failed to delete: {}", resp.status())));
+                        confirming_delete.set(false);
+                        deleting.set(false);
+                    }
+                    Err(e) => {
+                        delete_error.set(Some(format!("Request error: {}", e)));
+                        confirming_delete.set(false);
+                        deleting.set(false);
+                    }
+                }
+            });
         })
     };
 
@@ -681,9 +756,39 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 </h2>
                             }
                         </div>
-                        <button type="button" class="modal-close" onclick={on_close_btn}>{ "×" }</button>
+                        <div class="modal-header-actions">
+                            if props.is_admin {
+                                if *confirming_delete {
+                                    <span class="delete-confirm-prompt">{ "Delete this item?" }</span>
+                                    <button
+                                        type="button"
+                                        class="btn btn-small btn-danger"
+                                        onclick={on_delete_confirm}
+                                        disabled={*deleting}
+                                    >
+                                        { if *deleting { "Deleting..." } else { "Yes, delete" } }
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-small"
+                                        onclick={on_delete_cancel}
+                                        disabled={*deleting}
+                                    >
+                                        { "Cancel" }
+                                    </button>
+                                } else {
+                                    <button type="button" class="btn btn-small btn-danger" onclick={on_delete_click}>
+                                        { "Delete" }
+                                    </button>
+                                }
+                            }
+                            <button type="button" class="modal-close" onclick={on_close_btn}>{ "×" }</button>
+                        </div>
                     </div>
                     <div class="modal-body">
+                        if let Some(err) = (*delete_error).clone() {
+                            <p class="error">{ err }</p>
+                        }
                         <div class="item-meta">
                             <span class="meta-item">
                                 <strong>{ "Created: " }</strong>{ format_naive_date(&i.create_date) }

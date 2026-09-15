@@ -371,6 +371,7 @@ async fn statuses_for_vendor(
     let rows: Vec<StatusHistory> = status_history::table
         .inner_join(action_items::table.on(action_items::id.eq(status_history::action_item_id)))
         .filter(action_items::vendor_id.eq(vendor_id))
+        .filter(action_items::deleted_at.is_null())
         .order(status_history::changed_at.asc())
         .select(StatusHistory::as_select())
         .load(conn)
@@ -394,6 +395,7 @@ pub async fn list_items(State(state): State<Arc<AppState>>, auth: VendorAuth) ->
     let items: Vec<(ActionItem, Category)> = match action_items::table
         .inner_join(categories::table.on(categories::id.eq(action_items::category_id)))
         .filter(action_items::vendor_id.eq(auth.vendor.id))
+        .filter(action_items::deleted_at.is_null())
         .order(action_items::id.asc())
         .select((ActionItem::as_select(), Category::as_select()))
         .load(&mut conn)

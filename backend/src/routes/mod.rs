@@ -53,13 +53,18 @@ pub(super) async fn get_conn(state: &AppState) -> Result<Object<AsyncPgConnectio
 }
 
 #[allow(clippy::result_large_err)] // see note on `get_conn`
-/// Ensure an action item exists, returning a 404 response if it does not.
+/// Ensure an action item exists and has not been deleted, returning a 404
+/// response otherwise.
+///
+/// Deleted items are excluded here rather than in each caller, so adding a note
+/// or a status change to a deleted item is a 404 for every route that uses this.
 pub(super) async fn ensure_item_exists(
     conn: &mut AsyncPgConnection,
     item_id: &str,
 ) -> Result<(), Response> {
     let exists: bool = action_items::table
         .filter(action_items::id.eq(item_id))
+        .filter(action_items::deleted_at.is_null())
         .count()
         .get_result::<i64>(conn)
         .await
@@ -139,7 +144,16 @@ pub struct AuthUser {
     pub user_id: i32,
     pub email: String,
     pub name: String,
+    /// Whether this user is on the `ADMIN_EMAILS` allowlist. See
+    /// [`crate::AppConfig::is_admin`] for why it is not carried in the token.
+    pub is_admin: bool,
 }
+
+/// A staff session that is additionally on the `ADMIN_EMAILS` allowlist.
+///
+/// Requiring this type in a handler signature is what makes an endpoint
+/// admin-only — there is no in-handler check to forget.
+pub struct AdminUser(pub AuthUser);
 
 #[axum::async_trait]
 impl FromRequestParts<Arc<AppState>> for AuthUser {
@@ -151,18 +165,22 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
     ) -> Result<Self, Self::Rejection> {
         // Dev mode bypass
         if state.config.dev_mode {
+            let email = "dev@localhost".to_string();
+            let is_admin = state.config.is_admin(&email);
             if let Some(dev_user_id) = state.config.dev_user_id {
                 return Ok(AuthUser {
                     user_id: dev_user_id,
-                    email: "dev@localhost".to_string(),
+                    email,
                     name: "Dev User".to_string(),
+                    is_admin,
                 });
             }
             // Default dev user
             return Ok(AuthUser {
                 user_id: 1,
-                email: "dev@localhost".to_string(),
+                email,
                 name: "Dev User".to_string(),
+                is_admin,
             });
         }
 
@@ -227,11 +245,38 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
                 .into_response());
         }
 
+        let is_admin = state.config.is_admin(&token_data.claims.sub);
+
         Ok(AuthUser {
             user_id: token_data.claims.user_id,
             email: token_data.claims.sub,
             name: token_data.claims.name,
+            is_admin,
         })
+    }
+}
+
+#[axum::async_trait]
+impl FromRequestParts<Arc<AppState>> for AdminUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+
+        if !user.is_admin {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(ApiError::forbidden(
+                    "This action is restricted to administrators",
+                )),
+            )
+                .into_response());
+        }
+
+        Ok(AdminUser(user))
     }
 }
 

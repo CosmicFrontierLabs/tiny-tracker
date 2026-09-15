@@ -132,6 +132,49 @@ container ID, and Google's relay treats the EHLO domain as one of two ways it
 identifies a sending domain. On the credential-less path there is no SMTP AUTH
 to identify us instead, so a hex container ID risks a `550 5.7.1`.
 
+### Admin is an env allowlist, checked per request
+
+`ADMIN_EMAILS` is a comma-separated, case-insensitive list of emails permitted to
+perform destructive actions — today that means deleting an action item. It is
+**not** a database role and **not** a JWT claim: `AppConfig::is_admin` is
+consulted on every request, so removing someone from the list revokes the
+privilege at their next request rather than whenever their 24h token expires.
+
+Enforcement is the `AdminUser` extractor in `backend/src/routes/mod.rs`. Naming
+it in a handler signature is what makes a route admin-only, so there is no
+in-handler check to forget. `/auth/me` reports `is_admin` purely so the frontend
+can hide the control; the server never trusts it.
+
+An empty or unset `ADMIN_EMAILS` admits nobody. Dev mode grants admin
+unconditionally, since it already bypasses authentication entirely.
+
+### Deleting an item is a soft delete
+
+`DELETE /api/items/:id` sets `deleted_at` / `deleted_by_id` on the row. Nothing
+is destroyed: the item, its notes and its full status history all stay, and the
+ID stays claimed so it can never be reissued.
+
+This is not politeness, it is the backup posture. Production has no
+point-in-time recovery and only a nightly dump, so a destructive delete between
+dumps would lose up to a day of history with no way back. A soft delete also
+means the record of *what* was deleted is a database row that outlives the
+container, rather than a log line that does not.
+
+**Every read path must filter `deleted_at IS NULL`.** Miss one and a deleted
+item reappears somewhere. The current set is `items::list_items_internal`,
+`items::get`, `items::update` (filtering there is what stops an edit
+resurrecting an item), `items::go_redirect`, `ensure_item_exists` in
+`routes/mod.rs` (which covers every note and status route), the vendor item
+counts in `vendors.rs`, both halves of the `activity.rs` UNION, and both queries
+in the vendor portal.
+
+Restoring is an admin CLI operation, deliberately not in the web UI:
+
+```bash
+cargo run -p cli -- list-deleted
+cargo run -p cli -- restore-item --id AD-001
+```
+
 ### API responses use shared types, not `json!`
 Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
 
@@ -150,7 +193,7 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET/PATCH | `/api/vendors/:id` | Get / update vendor |
 | GET | `/api/items` | List all items |
 | GET/POST | `/api/vendors/:id/items` | List / create items for vendor |
-| GET/PATCH | `/api/items/:id` | Get / update item |
+| GET/PATCH/DELETE | `/api/items/:id` | Get / update / soft-delete item (delete is admin-only) |
 | GET/POST | `/api/items/:id/notes` | List / add notes |
 | GET | `/api/items/:id/history` | Status history |
 | POST | `/api/items/:id/status` | Change status |
@@ -186,6 +229,7 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 | `PUBLIC_URL` | Yes | Base URL for OAuth callbacks |
 | `PORT` | No | Server port (default: 8080) |
 | `ALLOWED_EMAIL_DOMAINS` | No | Comma-separated allowed domains |
+| `ADMIN_EMAILS` | No | Comma-separated emails allowed to delete items. Empty = nobody |
 | `DEV_MODE` | No | Set to `true` to bypass OAuth |
 | `DEV_USER_ID` | No | User ID for dev mode |
 | `MAIL_BACKEND` | No | `smtp` \| `resend` \| `log` (default `log` in dev, else `smtp`) |

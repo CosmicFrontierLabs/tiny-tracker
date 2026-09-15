@@ -303,6 +303,7 @@ pub async fn me(auth_user: AuthUser) -> Json<shared::CurrentUserResponse> {
         user_id: auth_user.user_id,
         email: auth_user.email,
         name: auth_user.name,
+        is_admin: auth_user.is_admin,
     })
 }
 

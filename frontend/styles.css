@@ -456,6 +456,25 @@ main {
     align-items: center;
 }
 
+/* Keeps the delete controls and the close button as one group on the right, so
+   arming the delete does not push the close button off the header row. */
+.modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.modal-header-actions .btn {
+    white-space: nowrap;
+}
+
+.delete-confirm-prompt {
+    font-size: 0.9rem;
+    color: #c0392b;
+    white-space: nowrap;
+}
+
 /* Item metadata */
 .item-meta {
     display: flex;

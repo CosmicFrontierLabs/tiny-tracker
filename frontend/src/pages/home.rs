@@ -105,6 +105,26 @@ pub fn home(props: &HomeProps) -> Html {
         });
     }
 
+    let is_admin = use_state(|| false);
+
+    // Fetched once rather than alongside the item list: admin status changes with
+    // deployment config, not with anything a session can do, so re-asking on every
+    // list refresh would be a request per modal close for an answer that cannot
+    // have moved.
+    {
+        let is_admin = is_admin.clone();
+        use_effect_with((), move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(resp) = Request::get("/auth/me").send().await {
+                    if let Ok(me) = resp.json::<shared::CurrentUserResponse>().await {
+                        is_admin.set(me.is_admin);
+                    }
+                }
+            });
+            || ()
+        });
+    }
+
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
@@ -434,6 +454,7 @@ pub fn home(props: &HomeProps) -> Html {
                         item_id={item_id}
                         users={(*users).clone()}
                         categories={(*categories).clone()}
+                        is_admin={*is_admin}
                         on_close={on_item_detail_close}
                     />
                 }
