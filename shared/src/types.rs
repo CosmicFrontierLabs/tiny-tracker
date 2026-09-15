@@ -284,6 +284,11 @@ pub struct CurrentUserResponse {
     pub user_id: i32,
     pub email: String,
     pub name: String,
+    /// Whether this session may perform destructive admin actions (item deletion).
+    ///
+    /// Derived from the server's `ADMIN_EMAILS` allowlist on every request, not
+    /// stored in the token, so the UI reflects a change to the list immediately.
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

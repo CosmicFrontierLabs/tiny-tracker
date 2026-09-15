@@ -18,7 +18,7 @@ use crate::models::{
 };
 use crate::AppState;
 
-use super::AuthUser;
+use super::{AdminUser, AuthUser};
 
 #[derive(Debug, Deserialize)]
 pub struct ItemsQuery {
@@ -133,6 +133,7 @@ async fn list_items_internal(
 
     let mut items_query = action_items::table
         .inner_join(categories::table.on(categories::id.eq(action_items::category_id)))
+        .filter(action_items::deleted_at.is_null())
         .into_boxed();
 
     if let Some(vid) = vendor_id.or(query.vendor_id) {
@@ -223,6 +224,7 @@ pub async fn get(
     let result: (ActionItem, Category) = match action_items::table
         .inner_join(categories::table.on(categories::id.eq(action_items::category_id)))
         .filter(action_items::id.eq(&item_id))
+        .filter(action_items::deleted_at.is_null())
         .select((ActionItem::as_select(), Category::as_select()))
         .first(&mut conn)
         .await
@@ -466,32 +468,37 @@ pub async fn update(
         updated_at: Some(Utc::now()),
     };
 
-    let item: ActionItem =
-        match diesel::update(action_items::table.filter(action_items::id.eq(&item_id)))
-            .set(&changeset)
-            .returning(ActionItem::as_returning())
-            .get_result(&mut conn)
-            .await
-        {
-            Ok(i) => i,
-            Err(diesel::NotFound) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(ApiError::not_found(format!(
-                        "Action item {} not found",
-                        item_id
-                    ))),
-                )
-                    .into_response()
-            }
-            Err(_) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ApiError::internal_error("Failed to update item")),
-                )
-                    .into_response()
-            }
-        };
+    // Filtering on `deleted_at` here is what stops an edit from silently
+    // resurrecting a deleted item, or mutating one behind a stale open tab.
+    let item: ActionItem = match diesel::update(
+        action_items::table
+            .filter(action_items::id.eq(&item_id))
+            .filter(action_items::deleted_at.is_null()),
+    )
+    .set(&changeset)
+    .returning(ActionItem::as_returning())
+    .get_result(&mut conn)
+    .await
+    {
+        Ok(i) => i,
+        Err(diesel::NotFound) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiError::not_found(format!(
+                    "Action item {} not found",
+                    item_id
+                ))),
+            )
+                .into_response()
+        }
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::internal_error("Failed to update item")),
+            )
+                .into_response()
+        }
+    };
 
     // Get category name
     let category: Category = match categories::table
@@ -535,6 +542,68 @@ pub async fn update(
     .into_response()
 }
 
+/// Soft-delete an action item: hide it everywhere, destroy nothing.
+///
+/// Admin-only. The row stays, along with its notes and its full status history,
+/// and `deleted_at` / `deleted_by_id` record who removed it and when. Production
+/// has no point-in-time recovery and only a nightly dump, so a destructive
+/// delete between dumps would lose up to a day of history with no way back; this
+/// way the record of what was deleted is a database row that survives a container
+/// being recreated, and a mistaken delete is reversible.
+///
+/// Every read path filters on `deleted_at IS NULL`, so from the outside this is
+/// indistinguishable from the item being gone.
+pub async fn delete(
+    State(state): State<Arc<AppState>>,
+    Path(item_id): Path<String>,
+    admin: AdminUser,
+) -> impl IntoResponse {
+    let mut conn = match super::get_conn(&state).await {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
+
+    // Conditional on the item still being live, so a second click cannot
+    // overwrite who deleted it first.
+    let updated = diesel::update(
+        action_items::table
+            .filter(action_items::id.eq(&item_id))
+            .filter(action_items::deleted_at.is_null()),
+    )
+    .set((
+        action_items::deleted_at.eq(Utc::now()),
+        action_items::deleted_by_id.eq(admin.0.user_id),
+    ))
+    .execute(&mut conn)
+    .await;
+
+    match updated {
+        // Absent and already-deleted are the same answer, because a deleted item
+        // is not supposed to be observable.
+        Ok(0) => (
+            StatusCode::NOT_FOUND,
+            Json(ApiError::not_found(format!(
+                "Action item {} not found",
+                item_id
+            ))),
+        )
+            .into_response(),
+        Ok(_) => {
+            tracing::info!(
+                item_id = %item_id,
+                admin = %admin.0.email,
+                "action item deleted"
+            );
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError::internal_error("Failed to delete item")),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn go_redirect(
     State(state): State<Arc<AppState>>,
     Path(item_id): Path<String>,
@@ -547,6 +616,7 @@ pub async fn go_redirect(
 
     let exists: bool = action_items::table
         .filter(action_items::id.eq(&item_id))
+        .filter(action_items::deleted_at.is_null())
         .select(action_items::id)
         .first::<String>(&mut conn)
         .await

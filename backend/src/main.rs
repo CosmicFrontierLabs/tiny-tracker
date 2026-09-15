@@ -43,6 +43,8 @@ pub struct AppConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub allowed_email_domains: Vec<String>,
+    /// Lower-cased emails allowed to perform destructive admin actions.
+    pub admin_emails: Vec<String>,
     pub mail: mail::MailConfig,
 }
 
@@ -74,8 +76,30 @@ impl AppConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            admin_emails: std::env::var("ADMIN_EMAILS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect(),
             mail: mail::MailConfig::from_env(dev_mode),
         }
+    }
+
+    /// Whether `email` may perform destructive admin actions.
+    ///
+    /// Checked per request rather than baked into the JWT, so dropping someone
+    /// from `ADMIN_EMAILS` revokes the privilege at the next request instead of
+    /// whenever their 24h token happens to expire.
+    ///
+    /// Dev mode grants it unconditionally: it already bypasses authentication
+    /// entirely, so an allowlist there would only be theatre.
+    pub fn is_admin(&self, email: &str) -> bool {
+        if self.dev_mode {
+            return true;
+        }
+        let email = email.to_lowercase();
+        self.admin_emails.contains(&email)
     }
 }
 
@@ -205,7 +229,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/vendors/:id/items",
             get(items::list).post(items::create),
         )
-        .route("/api/items/:item_id", get(items::get).patch(items::update))
+        .route(
+            "/api/items/:item_id",
+            get(items::get).patch(items::update).delete(items::delete),
+        )
         // Note routes
         .route(
             "/api/items/:item_id/notes",
@@ -257,4 +284,46 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::AppConfig;
+
+    fn config(dev_mode: bool, admin_emails: &[&str]) -> AppConfig {
+        AppConfig {
+            jwt_secret: "test".to_string(),
+            dev_mode,
+            dev_user_id: None,
+            public_url: "http://localhost:8080".to_string(),
+            google_client_id: None,
+            google_client_secret: None,
+            allowed_email_domains: Vec::new(),
+            admin_emails: admin_emails.iter().map(|e| e.to_string()).collect(),
+            mail: crate::mail::MailConfig::from_env(true),
+        }
+    }
+
+    #[test]
+    fn an_empty_allowlist_admits_nobody() {
+        // The default for a deployment that has not opted in. Getting this wrong
+        // in the permissive direction would hand item deletion to every user.
+        let config = config(false, &[]);
+        assert!(!config.is_admin("matt@cosmicfrontier.org"));
+    }
+
+    #[test]
+    fn allowlist_matching_ignores_address_case() {
+        // Google returns the address in whatever case the profile carries, which
+        // need not match how it was typed into the env var.
+        let config = config(false, &["matt@cosmicfrontier.org"]);
+        assert!(config.is_admin("Matt@CosmicFrontier.org"));
+        assert!(!config.is_admin("someone@cosmicfrontier.org"));
+    }
+
+    #[test]
+    fn dev_mode_is_admin_because_it_already_bypasses_auth() {
+        let config = config(true, &[]);
+        assert!(config.is_admin("anyone@localhost"));
+    }
 }

@@ -59,6 +59,8 @@ mod schema {
             updated_at -> Timestamptz,
             description -> Nullable<Text>,
             category_id -> Int4,
+            deleted_at -> Nullable<Timestamptz>,
+            deleted_by_id -> Nullable<Int4>,
         }
     }
 
@@ -142,6 +144,14 @@ enum Commands {
     ResetSequence {
         #[arg(long)]
         vendor: String,
+    },
+    /// List action items that have been soft-deleted from the web UI
+    ListDeleted,
+    /// Restore a soft-deleted action item, making it visible again
+    RestoreItem {
+        /// Item ID, e.g. "AD-001"
+        #[arg(long)]
+        id: String,
     },
     /// Import action items from a CSV file
     ImportCsv {
@@ -953,6 +963,74 @@ fn main() -> anyhow::Result<()> {
                 vendor_record.prefix, vendor_record.name, vendor_record.next_number
             );
             println!("To reset, manually update the vendors table.");
+        }
+
+        Commands::ListDeleted => {
+            let mut conn = establish_connection();
+
+            // Soft-deleted items are invisible in the web UI by design, so this
+            // is the only way to find out what is sitting there waiting to be
+            // restored.
+            let rows: Vec<(
+                String,
+                String,
+                chrono::DateTime<chrono::Utc>,
+                Option<String>,
+            )> = action_items::table
+                .left_join(users::table.on(users::id.nullable().eq(action_items::deleted_by_id)))
+                .filter(action_items::deleted_at.is_not_null())
+                .order(action_items::deleted_at.desc())
+                .select((
+                    action_items::id,
+                    action_items::title,
+                    action_items::deleted_at.assume_not_null(),
+                    users::name.nullable(),
+                ))
+                .load(&mut conn)?;
+
+            if rows.is_empty() {
+                println!("No deleted items.");
+                return Ok(());
+            }
+
+            println!("{:<12} {:<20} {:<20} Title", "ID", "Deleted", "By");
+            println!("{}", "-".repeat(90));
+            for (id, title, deleted_at, deleted_by) in rows {
+                println!(
+                    "{:<12} {:<20} {:<20} {}",
+                    id,
+                    deleted_at.format("%Y-%m-%d %H:%M UTC"),
+                    deleted_by.unwrap_or_else(|| "unknown".to_string()),
+                    title
+                );
+            }
+        }
+
+        Commands::RestoreItem { id } => {
+            let mut conn = establish_connection();
+
+            // Conditional on the item actually being deleted, so a typo'd ID
+            // reports a miss rather than silently doing nothing to a live item.
+            let restored = diesel::update(
+                action_items::table
+                    .filter(action_items::id.eq(&id))
+                    .filter(action_items::deleted_at.is_not_null()),
+            )
+            .set((
+                action_items::deleted_at.eq(None::<chrono::DateTime<chrono::Utc>>),
+                action_items::deleted_by_id.eq(None::<i32>),
+            ))
+            .execute(&mut conn)?;
+
+            if restored == 0 {
+                anyhow::bail!(
+                    "No deleted item with ID {id}. Run list-deleted to see what there is."
+                );
+            }
+
+            // Notes and status history were never removed, so the item comes back
+            // with its whole timeline intact.
+            println!("Restored {id}. It is visible in the web UI again.");
         }
 
         Commands::ImportCsv {

@@ -70,6 +70,7 @@ pub async fn activity(
             INNER JOIN action_items ai ON ai.id = n.action_item_id
             WHERE n.author_id != $1
               AND n.created_at > $2
+              AND ai.deleted_at IS NULL
         )
         UNION ALL
         (
@@ -85,6 +86,7 @@ pub async fn activity(
             INNER JOIN action_items ai ON ai.id = sh.action_item_id
             WHERE sh.changed_by_id != $1
               AND sh.changed_at > $2
+              AND ai.deleted_at IS NULL
         )
         ORDER BY timestamp DESC
         LIMIT $3

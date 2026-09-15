@@ -67,6 +67,7 @@ pub async fn list(
         // Get total items count
         let total: i64 = action_items::table
             .filter(action_items::vendor_id.eq(vendor.id))
+            .filter(action_items::deleted_at.is_null())
             .count()
             .get_result(&mut conn)
             .await

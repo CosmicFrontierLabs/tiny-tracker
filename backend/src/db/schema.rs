@@ -18,6 +18,8 @@ diesel::table! {
         updated_at -> Timestamptz,
         description -> Nullable<Text>,
         category_id -> Int4,
+        deleted_at -> Nullable<Timestamptz>,
+        deleted_by_id -> Nullable<Int4>,
     }
 }
 
