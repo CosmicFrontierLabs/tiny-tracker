@@ -1,3 +1,8 @@
+// clippy 1.99 flags redundant field names inside diesel's QueryableByName
+// derive expansion; the lint lands on the generated impl, so a struct-level
+// allow does not reach it.
+#![allow(clippy::redundant_field_names)]
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,

@@ -32,6 +32,8 @@ pub struct Email {
     pub text: String,
 }
 
+// clippy 1.99 flags async_trait's boxed-future expansion.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Mailer: Send + Sync {
     async fn send(&self, email: Email) -> anyhow::Result<()>;
