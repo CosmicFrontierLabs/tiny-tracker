@@ -2,6 +2,7 @@ pub mod activity_sidebar;
 pub mod header;
 pub mod mail_banner;
 pub mod mail_test;
+pub mod tracking_ids;
 pub mod vendor_domains;
 
 pub use activity_sidebar::ActivitySidebar;

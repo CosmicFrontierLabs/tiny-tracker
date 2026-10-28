@@ -37,6 +37,7 @@ pub struct CreateActionItemReq {
     pub owner_id: i32,
     pub priority: String,
     pub description: Option<String>,
+    pub vendor_tracking_ids: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +48,26 @@ pub struct UpdateActionItemReq {
     pub owner_id: Option<i32>,
     pub priority: Option<String>,
     pub description: Option<Option<String>>,
+    pub vendor_tracking_ids: Option<Option<String>>,
+}
+
+const VENDOR_TRACKING_IDS_MAX_LEN: usize = 1000;
+
+/// Trim a submitted tracking-ID string, folding whitespace-only input to `None`
+/// so clearing the field in the UI stores NULL rather than an empty string.
+fn normalize_tracking_ids(raw: Option<String>) -> Result<Option<String>, ApiError> {
+    let Some(raw) = raw else { return Ok(None) };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > VENDOR_TRACKING_IDS_MAX_LEN {
+        return Err(ApiError::validation_error(format!(
+            "Vendor tracking IDs must be at most {} characters",
+            VENDOR_TRACKING_IDS_MAX_LEN
+        )));
+    }
+    Ok(Some(trimmed.to_string()))
 }
 
 /// Return an item's current status and when it was set, falling back to "New" / creation time.
@@ -82,6 +103,7 @@ fn build_item_response(
         number: item.number,
         title: item.title,
         description: item.description,
+        vendor_tracking_ids: item.vendor_tracking_ids,
         create_date: item.create_date,
         created_by_id: item.created_by_id,
         created_by_name: creator
@@ -292,6 +314,11 @@ pub async fn create(
             .into_response();
     }
 
+    let vendor_tracking_ids = match normalize_tracking_ids(payload.vendor_tracking_ids) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+    };
+
     let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
         Err(resp) => return resp,
@@ -376,6 +403,7 @@ pub async fn create(
         priority: payload.priority,
         description: payload.description,
         category_id: payload.category_id,
+        vendor_tracking_ids,
     };
 
     let item: ActionItem = match diesel::insert_into(action_items::table)
@@ -453,6 +481,16 @@ pub async fn update(
         }
     }
 
+    // `Some(None)` clears the field; `None` leaves it alone. Normalising inside
+    // the outer `Some` keeps that distinction while still folding "" to NULL.
+    let vendor_tracking_ids = match payload.vendor_tracking_ids {
+        None => None,
+        Some(raw) => match normalize_tracking_ids(raw) {
+            Ok(v) => Some(v),
+            Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+        },
+    };
+
     let mut conn = match super::get_conn(&state).await {
         Ok(c) => c,
         Err(resp) => return resp,
@@ -465,6 +503,7 @@ pub async fn update(
         owner_id: payload.owner_id,
         priority: payload.priority,
         description: payload.description,
+        vendor_tracking_ids,
         updated_at: Some(Utc::now()),
     };
 

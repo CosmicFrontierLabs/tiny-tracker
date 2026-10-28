@@ -18,6 +18,7 @@ pub struct NewItemModalProps {
 pub fn new_item_modal(props: &NewItemModalProps) -> Html {
     let title = use_state(String::new);
     let due_date = use_state(String::new);
+    let vendor_tracking_ids = use_state(String::new);
     let category_id = use_state(|| 0i32);
     let priority = use_state(|| "Medium".to_string());
     let vendor_id = use_state(|| props.vendors.first().map(|v| v.id).unwrap_or(0));
@@ -63,6 +64,14 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
         Callback::from(move |e: InputEvent| {
             let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
             due_date.set(input.value());
+        })
+    };
+
+    let on_tracking_ids_change = {
+        let vendor_tracking_ids = vendor_tracking_ids.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
+            vendor_tracking_ids.set(input.value());
         })
     };
 
@@ -188,6 +197,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
     let on_submit = {
         let title = title.clone();
         let due_date = due_date.clone();
+        let vendor_tracking_ids = vendor_tracking_ids.clone();
         let category_id = category_id.clone();
         let priority = priority.clone();
         let vendor_id = vendor_id.clone();
@@ -201,6 +211,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
 
             let title_val = (*title).clone();
             let due_date_val = (*due_date).clone();
+            let tracking_ids_val = vendor_tracking_ids.trim().to_string();
             let category_id_val = *category_id;
             let priority_val = (*priority).clone();
             let vendor_id_val = *vendor_id;
@@ -228,6 +239,7 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
                     "category_id": category_id_val,
                     "priority": priority_val,
                     "owner_id": owner_id_val,
+                    "vendor_tracking_ids": if tracking_ids_val.is_empty() { None::<String> } else { Some(tracking_ids_val) },
                 });
 
                 match Request::post(&format!("/api/vendors/{}/items", vendor_id_val))
@@ -305,6 +317,18 @@ pub fn new_item_modal(props: &NewItemModalProps) -> Html {
                             value={(*due_date).clone()}
                             oninput={on_due_date_change}
                         />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vendor_tracking_ids">{ "Vendor Tracking IDs (optional)" }</label>
+                        <input
+                            type="text"
+                            id="vendor_tracking_ids"
+                            value={(*vendor_tracking_ids).clone()}
+                            oninput={on_tracking_ids_change}
+                            placeholder="e.g. VND-4521, https://vendor.example/tickets/4521"
+                        />
+                        <p class="edit-hint">{ "The vendor's own ticket IDs or links, separated by commas" }</p>
                     </div>
 
                     <div class="form-group">

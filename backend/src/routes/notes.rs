@@ -124,6 +124,7 @@ pub async fn create(
         owner_id: None,
         priority: None,
         description: None,
+        vendor_tracking_ids: None,
         updated_at: Some(Utc::now()),
     };
     let _ = diesel::update(action_items::table.filter(action_items::id.eq(&note.action_item_id)))
