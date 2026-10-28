@@ -11,6 +11,8 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
+use crate::components::tracking_ids::tracking_id_chips;
+
 use crate::pages::status_style::{priority_class, status_class};
 
 /// Read `?error=` off the current URL, so `/vendor/verify` can explain why it
@@ -218,6 +220,7 @@ fn open_items(props: &OpenItemsProps) -> Html {
                             <tr>
                                 <th>{ "ID" }</th>
                                 <th>{ "Title" }</th>
+                                <th>{ "Your Ref" }</th>
                                 <th>{ "Category" }</th>
                                 <th>{ "Priority" }</th>
                                 <th>{ "Status" }</th>
@@ -229,6 +232,12 @@ fn open_items(props: &OpenItemsProps) -> Html {
                                 <tr key={item.id.clone()}>
                                     <td>{ &item.id }</td>
                                     <td class="item-title">{ &item.title }</td>
+                                    <td>
+                                        { match item.vendor_tracking_ids.as_deref() {
+                                            Some(ids) if !ids.trim().is_empty() => tracking_id_chips(ids),
+                                            _ => html! { "-" },
+                                        } }
+                                    </td>
                                     <td>{ &item.category }</td>
                                     <td>
                                         <span class={priority_class(&item.priority)}>
