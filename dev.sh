@@ -30,8 +30,8 @@ case "$1" in
 
         # Create default dev user and vendor if they don't exist
         echo "Setting up default dev user and vendor..."
-        cargo run --quiet --bin action-tracker-cli -- user create --email dev@localhost --name "Dev User" 2>/dev/null || true
-        cargo run --quiet --bin action-tracker-cli -- vendor create --prefix DEV --name "Development" 2>/dev/null || true
+        cargo run --quiet --bin action-tracker-cli -- create-user --email dev@localhost --name "Dev User" 2>/dev/null || true
+        cargo run --quiet --bin action-tracker-cli -- create-vendor --prefix DEV --name "Development" 2>/dev/null || true
 
         echo ""
         echo "Development environment started!"

@@ -99,6 +99,7 @@ pub struct ActionItem {
     pub updated_at: DateTime<Utc>,
     pub description: Option<String>,
     pub category_id: i32,
+    pub vendor_tracking_ids: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -115,6 +116,7 @@ pub struct NewActionItem {
     pub priority: String,
     pub description: Option<String>,
     pub category_id: i32,
+    pub vendor_tracking_ids: Option<String>,
 }
 
 #[derive(Debug, AsChangeset)]
@@ -126,6 +128,7 @@ pub struct UpdateActionItem {
     pub owner_id: Option<i32>,
     pub priority: Option<String>,
     pub description: Option<Option<String>>,
+    pub vendor_tracking_ids: Option<Option<String>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
 

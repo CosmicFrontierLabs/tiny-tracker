@@ -200,6 +200,7 @@ pub struct CreateActionItem {
     pub owner_id: i32,
     pub priority: Priority,
     pub description: Option<String>,
+    pub vendor_tracking_ids: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -210,6 +211,7 @@ pub struct UpdateActionItem {
     pub owner_id: Option<i32>,
     pub priority: Option<Priority>,
     pub description: Option<Option<String>>,
+    pub vendor_tracking_ids: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -312,6 +314,9 @@ pub struct ActionItemResponse {
     pub number: i32,
     pub title: String,
     pub description: Option<String>,
+    /// Free-form references into the vendor's own ticketing system: keys or
+    /// URLs, comma- or newline-separated. Stored as typed; the UI splits it.
+    pub vendor_tracking_ids: Option<String>,
     pub create_date: NaiveDate,
     pub created_by_id: i32,
     pub created_by_name: String,
@@ -424,6 +429,8 @@ pub struct VendorPortalItem {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
+    /// The vendor's own ticket references, so they can match our item to theirs.
+    pub vendor_tracking_ids: Option<String>,
     pub category: String,
     pub priority: String,
     pub status: String,

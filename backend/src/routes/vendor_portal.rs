@@ -430,6 +430,7 @@ pub async fn list_items(State(state): State<Arc<AppState>>, auth: VendorAuth) ->
                 id: item.id,
                 title: item.title,
                 description: item.description,
+                vendor_tracking_ids: item.vendor_tracking_ids,
                 category: category.name,
                 priority: item.priority,
                 status,
