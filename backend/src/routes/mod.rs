@@ -5,6 +5,7 @@ pub mod health;
 pub mod items;
 pub mod mail_test;
 pub mod notes;
+pub mod risks;
 pub mod status;
 pub mod users;
 pub mod vendor_portal;

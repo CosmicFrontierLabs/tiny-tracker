@@ -175,6 +175,64 @@ cargo run -p cli -- list-deleted
 cargo run -p cli -- restore-item --id AD-001
 ```
 
+### Risk register: risks are the reasons, action items are the work
+
+`risks` is a register of risks *about* vendors, numbered as one programme-wide
+series: `RISK-034`, from the `risk_number_seq` sequence (atomic, so concurrent
+creates cannot collide). Action items keep the vendor's prefix (`AD-001`)
+because they are the vendor's work; a risk is ours and reads the same from any
+view, so it carries no prefix. `vendor_id` records which vendor it concerns.
+Action items map into risks many-to-many
+through `action_item_risks`; one risk can be retired by several items and one
+item can address several risks. There is no same-vendor constraint on links.
+Links can be made from either side: one at a time from the item modal, or
+several at once from the risk modal and at risk creation (`CreateRisk.item_ids`,
+`POST /api/risks/:id/items`). Batch links check every ID before writing any
+row, so a typo rejects the whole request rather than leaving a half-linked risk.
+
+**Risks are staff-only.** Every risk route is under `/api/*` behind `AuthUser`,
+the vendor portal's `/vendor/api/*` handlers never read the `risks` or
+`action_item_risks` tables, and `VendorPortalItem` carries no risk fields.
+Keep it that way: the register holds candid assessments of the vendor's own
+hardware, and a vendor must not be able to learn which of their items we
+consider a High.
+
+**Score and level are never stored.** Score is severity × likelihood (each
+0–5, half points allowed), level is High ≥ 15, Medium ≥ 8, else Low. Both live
+in `shared::risk_score` / `shared::risk_level` so the API, the WASM UI and the
+CLI importer cannot disagree. Storing them would only create a second place
+for the truth to drift.
+
+Status (`Open`, `In work`, `Mitigated`, `Accepted`) and trend (`New`,
+`Improving`, `Stable`, `Worsening`, `Closed`) are plain columns with CHECK
+constraints, not history-derived like item status. Trend is a human judgement
+recorded at review; `Closed` is a *trend* rather than a status because that is
+how the register has always been kept. The UI hides `Closed` risks by default.
+
+`component` ("Item" in the UI and in the sheet) and `category` are free text
+with datalist suggestions drawn from existing risks, not lookup tables: the
+sets are small, vendor-specific and change as hardware is renamed.
+
+Risks soft-delete exactly like items (admin-only, `deleted_at`), and **every
+read path filters `deleted_at IS NULL`**: `risks::list_internal`,
+`load_risk_response`, `update`, `ensure_risk_exists` (which covers linking
+and the per-risk item list), and `risks_for_item`. The link-count subquery
+must *also* filter deleted items, or a deleted item keeps propping up a count.
+
+```bash
+cargo run -p cli -- import-risks-csv --file register.csv --vendor NEU --dry-run
+cargo run -p cli -- list-deleted-risks
+cargo run -p cli -- restore-risk --id RISK-034
+```
+
+The importer takes a CSV export of the mastersheet (columns `ID, Item,
+Category, Risk, Cause, Effect, Sev, Lik, Score, Level, Mitigation, Test type,
+Verification (test IDs), Status, Opened, Updated, Trend`), preserves the
+sheet's `R<n>` numbers as `RISK-<n>`, refuses duplicate IDs in the file,
+refuses numbers already used by another vendor's risks, advances the sequence
+past the highest imported number, and warns when the sheet's Level disagrees
+with the computed one.
+
 ### Vendor tracking IDs are free text, not a table
 
 `action_items.vendor_tracking_ids` is a nullable `TEXT` holding the vendor's
@@ -215,6 +273,12 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET | `/api/categories` | List all categories |
 | GET/POST | `/api/vendors/:id/categories` | List / create categories for vendor |
 | GET | `/go/:item_id` | Deep link redirect |
+| GET | `/api/risks` | List risks (`?vendor_id=`, `?status=`), highest score first |
+| GET/POST | `/api/vendors/:id/risks` | List / create risks for vendor |
+| GET/PATCH/DELETE | `/api/risks/:id` | Get / update / soft-delete risk (delete is admin-only) |
+| GET/POST | `/api/risks/:id/items` | Live action items linked to a risk / link several (`{"item_ids":[...]}`) |
+| GET/POST | `/api/items/:id/risks` | Risks linked to an item / link one (`{"risk_id"}`) |
+| DELETE | `/api/items/:id/risks/:risk_id` | Unlink |
 | GET/POST | `/api/vendors/:id/allowed-domains` | List / add portal email domains |
 | DELETE | `/api/vendors/:id/allowed-domains/:domain_id` | Revoke a portal domain |
 

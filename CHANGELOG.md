@@ -11,6 +11,31 @@ a new secret — belongs here, because the deploy config lives in a different re
 
 ### Added
 
+- **Risk register.** A second register alongside action items, reachable from
+  the header. Each risk records the module or area it is against, a category,
+  the risk statement, cause, effect, severity and likelihood (0–5, half points
+  allowed), mitigation, test type, verification test IDs, status (`Open`,
+  `In work`, `Mitigated`, `Accepted`), trend (`New`, `Improving`, `Stable`,
+  `Worsening`, `Closed`) and the date it was opened. Score (severity ×
+  likelihood) and level (High ≥ 15, Medium ≥ 8, else Low) are computed, never
+  stored. Risk IDs are one programme-wide series, `RISK-034`; action items
+  keep their vendor prefix.
+
+  Action items map into risks many-to-many: the item modal gains a "Risks"
+  section to link and unlink, and the risk modal lists the items addressing
+  it, with a multi-select picker to link several at once. A risk can also be
+  created already linked to a set of items. Risks are staff-only and never
+  appear in the vendor portal. Deleting a risk is admin-only and a soft delete, restorable with
+  `cargo run -p cli -- restore-risk --id RISK-034`.
+
+  An existing register can be loaded from a CSV export of the mastersheet:
+
+  ```bash
+  cargo run -p cli -- import-risks-csv --file register.csv --vendor NEU --dry-run
+  ```
+
+  No new environment variables.
+
 - **Admin-only item deletion, as a soft delete.** The ticket modal shows a
   `Delete` button to admins, which arms on the first click and only sends the
   request on the second. `DELETE /api/items/:id` marks the item deleted rather
@@ -56,6 +81,10 @@ a new secret — belongs here, because the deploy config lives in a different re
   a safe variable to add after the image ships rather than before.
 
 ### Database
+
+- Migration `2026-11-11-000013_risk_register` adds `risks`,
+  `action_item_risks` and the `risk_number_seq` sequence. Purely additive;
+  existing data is untouched.
 
 - Migration `2026-09-15-000011_soft_delete_action_items` adds `deleted_at` and
   `deleted_by_id` to `action_items`, plus a partial index on live rows. Both

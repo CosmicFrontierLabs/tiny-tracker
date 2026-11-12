@@ -212,3 +212,86 @@ pub struct NewVendorMagicLink {
     pub token_hash: String,
     pub expires_at: DateTime<Utc>,
 }
+
+// ============================================================================
+// Risk
+// ============================================================================
+
+/// Loaded only via `as_select()` / `as_returning()`, so the soft-delete
+/// columns are deliberately absent here, as they are on `ActionItem`.
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = risks)]
+pub struct Risk {
+    pub id: String,
+    pub vendor_id: i32,
+    pub number: i32,
+    pub component: Option<String>,
+    pub category: String,
+    pub title: String,
+    pub cause: Option<String>,
+    pub effect: Option<String>,
+    pub severity: f64,
+    pub likelihood: f64,
+    pub mitigation: Option<String>,
+    pub test_type: Option<String>,
+    pub verification: Option<String>,
+    pub status: String,
+    pub trend: String,
+    pub opened_on: NaiveDate,
+    pub created_by_id: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = risks)]
+pub struct NewRisk {
+    pub id: String,
+    pub vendor_id: i32,
+    pub number: i32,
+    pub component: Option<String>,
+    pub category: String,
+    pub title: String,
+    pub cause: Option<String>,
+    pub effect: Option<String>,
+    pub severity: f64,
+    pub likelihood: f64,
+    pub mitigation: Option<String>,
+    pub test_type: Option<String>,
+    pub verification: Option<String>,
+    pub status: String,
+    pub trend: String,
+    pub opened_on: NaiveDate,
+    pub created_by_id: i32,
+}
+
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = risks)]
+pub struct UpdateRisk {
+    pub component: Option<Option<String>>,
+    pub category: Option<String>,
+    pub title: Option<String>,
+    pub cause: Option<Option<String>>,
+    pub effect: Option<Option<String>>,
+    pub severity: Option<f64>,
+    pub likelihood: Option<f64>,
+    pub mitigation: Option<Option<String>>,
+    pub test_type: Option<Option<String>>,
+    pub verification: Option<Option<String>>,
+    pub status: Option<String>,
+    pub trend: Option<String>,
+    pub opened_on: Option<NaiveDate>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+// ============================================================================
+// ActionItemRisk (link table)
+// ============================================================================
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = action_item_risks)]
+pub struct NewActionItemRisk {
+    pub action_item_id: String,
+    pub risk_id: String,
+    pub linked_by_id: i32,
+}
