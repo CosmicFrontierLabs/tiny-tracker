@@ -31,6 +31,39 @@ mod schema {
     }
 
     diesel::table! {
+        risks (id) {
+            #[max_length = 20]
+            id -> Varchar,
+            vendor_id -> Int4,
+            number -> Int4,
+            #[max_length = 100]
+            component -> Nullable<Varchar>,
+            #[max_length = 100]
+            category -> Varchar,
+            #[max_length = 500]
+            title -> Varchar,
+            cause -> Nullable<Text>,
+            effect -> Nullable<Text>,
+            severity -> Float8,
+            likelihood -> Float8,
+            mitigation -> Nullable<Text>,
+            #[max_length = 50]
+            test_type -> Nullable<Varchar>,
+            verification -> Nullable<Text>,
+            #[max_length = 20]
+            status -> Varchar,
+            #[max_length = 20]
+            trend -> Varchar,
+            opened_on -> Date,
+            created_by_id -> Int4,
+            created_at -> Timestamptz,
+            updated_at -> Timestamptz,
+            deleted_at -> Nullable<Timestamptz>,
+            deleted_by_id -> Nullable<Int4>,
+        }
+    }
+
+    diesel::table! {
         categories (id) {
             id -> Int4,
             vendor_id -> Int4,
@@ -94,6 +127,7 @@ mod schema {
         action_items,
         categories,
         notes,
+        risks,
         status_history,
         users,
         vendors,
@@ -154,6 +188,31 @@ enum Commands {
         #[arg(long)]
         id: String,
     },
+    /// List risks that have been soft-deleted from the web UI
+    ListDeletedRisks,
+    /// Restore a soft-deleted risk, making it visible again
+    RestoreRisk {
+        /// Risk ID, e.g. "RISK-034"
+        #[arg(long)]
+        id: String,
+    },
+    /// Import a risk register from a CSV export of the mastersheet
+    ImportRisksCsv {
+        /// Path to the CSV file (columns: ID, Item, Category, Risk, Cause,
+        /// Effect, Sev, Lik, Score, Level, Mitigation, Test type,
+        /// Verification (test IDs), Status, Opened, Updated, Trend)
+        #[arg(long)]
+        file: PathBuf,
+        /// Vendor prefix the risks belong to (e.g. "NEU")
+        #[arg(long)]
+        vendor: String,
+        /// Email of the user to record as creator; defaults to the first user
+        #[arg(long)]
+        created_by: Option<String>,
+        /// Dry run - parse and validate without writing to the database
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
     /// Import action items from a CSV file
     ImportCsv {
         /// Path to the CSV file
@@ -182,7 +241,7 @@ struct NewUser {
 
 #[derive(Queryable)]
 #[allow(dead_code)]
-struct User {
+pub(crate) struct User {
     id: i32,
     email: String,
     name: String,
@@ -200,7 +259,7 @@ struct NewVendor {
 
 #[derive(Queryable)]
 #[allow(dead_code)]
-struct Vendor {
+pub(crate) struct Vendor {
     id: i32,
     prefix: String,
     name: String,
@@ -846,10 +905,425 @@ fn import_csv(file: PathBuf, vendor_prefix: Option<String>, dry_run: bool) -> an
 }
 
 // ============================================================================
+// Risk register import
+// ============================================================================
+
+#[derive(Insertable)]
+#[diesel(table_name = risks)]
+struct NewRisk {
+    id: String,
+    vendor_id: i32,
+    number: i32,
+    component: Option<String>,
+    category: String,
+    title: String,
+    cause: Option<String>,
+    effect: Option<String>,
+    severity: f64,
+    likelihood: f64,
+    mitigation: Option<String>,
+    test_type: Option<String>,
+    verification: Option<String>,
+    status: String,
+    trend: String,
+    opened_on: NaiveDate,
+    created_by_id: i32,
+    updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// One row of the mastersheet. Score and Level are read only to cross-check
+/// against what the tracker will compute; they are never stored.
+#[derive(Debug, serde::Deserialize)]
+struct RiskCsvRow {
+    #[serde(rename = "ID")]
+    id: String,
+    #[serde(rename = "Item")]
+    item: String,
+    #[serde(rename = "Category")]
+    category: String,
+    #[serde(rename = "Risk")]
+    risk: String,
+    #[serde(rename = "Cause", default)]
+    cause: String,
+    #[serde(rename = "Effect", default)]
+    effect: String,
+    #[serde(rename = "Sev")]
+    sev: String,
+    #[serde(rename = "Lik")]
+    lik: String,
+    #[serde(rename = "Score", default)]
+    #[allow(dead_code)]
+    score: String,
+    #[serde(rename = "Level", default)]
+    level: String,
+    #[serde(rename = "Mitigation", default)]
+    mitigation: String,
+    #[serde(rename = "Test type", default)]
+    test_type: String,
+    #[serde(rename = "Verification (test IDs)", default)]
+    verification: String,
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "Opened", default)]
+    opened: String,
+    #[serde(rename = "Updated", default)]
+    updated: String,
+    #[serde(rename = "Trend", default)]
+    trend: String,
+}
+
+/// Parse "R34", "r34" or "34" into 34.
+fn parse_risk_number(s: &str) -> anyhow::Result<i32> {
+    let s = s.trim();
+    let digits = s
+        .strip_prefix('R')
+        .or_else(|| s.strip_prefix('r'))
+        .unwrap_or(s);
+    let n: i32 = digits
+        .parse()
+        .with_context(|| format!("Invalid risk ID: '{}' (expected R<number>)", s))?;
+    if n <= 0 {
+        anyhow::bail!("Invalid risk ID: '{}' (number must be positive)", s);
+    }
+    Ok(n)
+}
+
+/// Accept ISO (2026-06-25) or US (6/25/2026) dates.
+fn parse_any_date(s: &str) -> anyhow::Result<NaiveDate> {
+    let s = s.trim();
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Ok(d);
+    }
+    parse_date(s)
+}
+
+fn parse_scale(s: &str, field: &str) -> anyhow::Result<f64> {
+    let v: f64 = s
+        .trim()
+        .parse()
+        .with_context(|| format!("{}: cannot parse '{}' as a number", field, s.trim()))?;
+    if !v.is_finite() || !(0.0..=shared::RISK_SCALE_MAX).contains(&v) {
+        anyhow::bail!("{}: {} is outside 0-{}", field, v, shared::RISK_SCALE_MAX);
+    }
+    Ok(v)
+}
+
+/// Status labels as the sheet writes them, with the obvious variants.
+fn normalize_risk_status(s: &str) -> anyhow::Result<shared::RiskStatus> {
+    let key = s.trim().to_lowercase().replace(['-', '_'], " ");
+    shared::RiskStatus::from_label(&key)
+        .or(match key.as_str() {
+            "inwork" | "in progress" | "working" => Some(shared::RiskStatus::InWork),
+            "closed" | "retired" => Some(shared::RiskStatus::Mitigated),
+            _ => None,
+        })
+        .with_context(|| format!("Unknown risk status: '{}'", s.trim()))
+}
+
+fn normalize_risk_trend(s: &str) -> anyhow::Result<shared::RiskTrend> {
+    let key = s.trim();
+    if key.is_empty() {
+        return Ok(shared::RiskTrend::New);
+    }
+    shared::RiskTrend::from_label(key).with_context(|| format!("Unknown risk trend: '{}'", key))
+}
+
+fn opt_text(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() || t == "-" {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+/// A validated row, ready to insert.
+struct ParsedRisk {
+    number: i32,
+    component: Option<String>,
+    category: String,
+    title: String,
+    cause: Option<String>,
+    effect: Option<String>,
+    severity: f64,
+    likelihood: f64,
+    mitigation: Option<String>,
+    test_type: Option<String>,
+    verification: Option<String>,
+    status: shared::RiskStatus,
+    trend: shared::RiskTrend,
+    opened_on: NaiveDate,
+    updated_on: NaiveDate,
+}
+
+fn parse_risk_row(row: &RiskCsvRow, today: NaiveDate) -> anyhow::Result<ParsedRisk> {
+    let number = parse_risk_number(&row.id)?;
+    let title = row.risk.trim().to_string();
+    if title.is_empty() {
+        anyhow::bail!("Risk statement is empty");
+    }
+    let category = row.category.trim().to_string();
+    if category.is_empty() {
+        anyhow::bail!("Category is empty");
+    }
+    let opened_on = if row.opened.trim().is_empty() {
+        today
+    } else {
+        parse_any_date(&row.opened).context("Opened")?
+    };
+    let updated_on = if row.updated.trim().is_empty() {
+        opened_on
+    } else {
+        parse_any_date(&row.updated).context("Updated")?
+    };
+    Ok(ParsedRisk {
+        number,
+        component: opt_text(&row.item),
+        category,
+        title,
+        cause: opt_text(&row.cause),
+        effect: opt_text(&row.effect),
+        severity: parse_scale(&row.sev, "Sev")?,
+        likelihood: parse_scale(&row.lik, "Lik")?,
+        mitigation: opt_text(&row.mitigation),
+        test_type: opt_text(&row.test_type),
+        verification: opt_text(&row.verification),
+        status: normalize_risk_status(&row.status)?,
+        trend: normalize_risk_trend(&row.trend)?,
+        opened_on,
+        updated_on,
+    })
+}
+
+fn import_risks_csv(
+    file: PathBuf,
+    prefix: String,
+    created_by: Option<String>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let contents = std::fs::read_to_string(&file)
+        .with_context(|| format!("Failed to read file: {}", file.display()))?;
+
+    // Tolerate a few lines of preamble above the real header, as the item
+    // importer does.
+    let lines: Vec<&str> = contents.lines().collect();
+    let header_idx = lines
+        .iter()
+        .position(|l| l.starts_with("ID,") && l.contains("Risk") && l.contains("Sev"))
+        .context(
+            "Could not find a header row starting with 'ID,' and containing 'Risk' and 'Sev'",
+        )?;
+    let csv_body = lines[header_idx..].join("\n");
+
+    let mut rdr = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(csv_body.as_bytes());
+
+    let mut rows: Vec<RiskCsvRow> = Vec::new();
+    for result in rdr.deserialize() {
+        let row: RiskCsvRow = result?;
+        if row.id.trim().is_empty() && row.risk.trim().is_empty() {
+            continue;
+        }
+        rows.push(row);
+    }
+
+    if rows.is_empty() {
+        println!("No risks found in CSV.");
+        return Ok(());
+    }
+
+    println!("Parsed {} risks for vendor '{}'", rows.len(), prefix);
+
+    let today = chrono::Utc::now().date_naive();
+    let mut parsed: Vec<ParsedRisk> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    let mut seen: HashMap<i32, usize> = HashMap::new();
+
+    for (i, row) in rows.iter().enumerate() {
+        let line = i + 1;
+        match parse_risk_row(row, today) {
+            Ok(p) => {
+                // The sheet has no uniqueness check on its ID column, and a
+                // duplicated ID is a real mistake someone should resolve before
+                // one of the two rows silently wins.
+                if let Some(first) = seen.insert(p.number, line) {
+                    errors.push(format!(
+                        "Row {}: duplicate ID '{}' (also row {})",
+                        line,
+                        row.id.trim(),
+                        first
+                    ));
+                }
+                let computed = shared::risk_level(shared::risk_score(p.severity, p.likelihood));
+                if !row.level.trim().is_empty()
+                    && !row.level.trim().eq_ignore_ascii_case(computed.as_str())
+                {
+                    println!(
+                        "  WARN row {}: sheet says level '{}' but sev {} x lik {} computes to {}",
+                        line,
+                        row.level.trim(),
+                        p.severity,
+                        p.likelihood,
+                        computed.as_str()
+                    );
+                }
+                parsed.push(p);
+            }
+            Err(e) => errors.push(format!("Row {} ({}): {:#}", line, row.id.trim(), e)),
+        }
+    }
+
+    if !errors.is_empty() {
+        println!("\nValidation errors:");
+        for e in &errors {
+            println!("  ERROR: {}", e);
+        }
+        anyhow::bail!("{} validation error(s) found", errors.len());
+    }
+
+    println!("All rows validated successfully.");
+
+    let max_number = parsed.iter().map(|p| p.number).max().unwrap_or(0);
+
+    if dry_run {
+        println!("\n[DRY RUN] Would import {} risks.", parsed.len());
+        for p in &parsed {
+            let score = shared::risk_score(p.severity, p.likelihood);
+            println!(
+                "  RISK-{:03}  {:<6} {:<10} {:<9} {}",
+                p.number,
+                score,
+                p.status.as_str(),
+                p.trend.as_str(),
+                p.title
+            );
+        }
+        return Ok(());
+    }
+
+    let mut conn = establish_connection();
+
+    let vendor: Vendor = vendors::table
+        .filter(vendors::prefix.eq(&prefix))
+        .first(&mut conn)
+        .with_context(|| {
+            format!(
+                "Vendor with prefix '{}' not found. Create it first.",
+                prefix
+            )
+        })?;
+
+    let creator: User = match created_by {
+        Some(email) => users::table
+            .filter(users::email.eq(&email))
+            .first(&mut conn)
+            .with_context(|| format!("No user with email '{}'", email))?,
+        None => users::table
+            .order(users::id.asc())
+            .first(&mut conn)
+            .context("No users in database. Create a user first.")?,
+    };
+    println!("Recording creator as {} <{}>", creator.name, creator.email);
+
+    // Risk numbers are one programme-wide series. A number already taken by
+    // a risk about a *different* vendor is a genuine clash, not a re-import,
+    // and must be resolved in the sheet rather than silently skipped.
+    let numbers: Vec<i32> = parsed.iter().map(|p| p.number).collect();
+    let taken: Vec<(i32, i32)> = risks::table
+        .filter(risks::number.eq_any(&numbers))
+        .select((risks::number, risks::vendor_id))
+        .load(&mut conn)?;
+    let clashes: Vec<String> = taken
+        .iter()
+        .filter(|(_, vid)| *vid != vendor.id)
+        .map(|(n, _)| format!("RISK-{:03}", n))
+        .collect();
+    if !clashes.is_empty() {
+        anyhow::bail!(
+            "These numbers already belong to another vendor's risks: {}",
+            clashes.join(", ")
+        );
+    }
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        let mut imported = 0;
+        let mut skipped = 0;
+
+        for p in &parsed {
+            let id = format!("RISK-{:03}", p.number);
+
+            let exists: bool =
+                diesel::select(diesel::dsl::exists(risks::table.filter(risks::id.eq(&id))))
+                    .get_result(conn)?;
+            if exists {
+                println!("  SKIP {} (already exists)", id);
+                skipped += 1;
+                continue;
+            }
+
+            let new_risk = NewRisk {
+                id: id.clone(),
+                vendor_id: vendor.id,
+                number: p.number,
+                component: p.component.clone(),
+                category: p.category.clone(),
+                title: p.title.clone(),
+                cause: p.cause.clone(),
+                effect: p.effect.clone(),
+                severity: p.severity,
+                likelihood: p.likelihood,
+                mitigation: p.mitigation.clone(),
+                test_type: p.test_type.clone(),
+                verification: p.verification.clone(),
+                status: p.status.as_str().to_string(),
+                trend: p.trend.as_str().to_string(),
+                opened_on: p.opened_on,
+                created_by_id: creator.id,
+                // The sheet's "Updated" is the last review date; carrying it
+                // over keeps the register's recency honest after import.
+                updated_at: p
+                    .updated_on
+                    .and_hms_opt(0, 0, 0)
+                    .expect("midnight exists")
+                    .and_utc(),
+            };
+
+            diesel::insert_into(risks::table)
+                .values(&new_risk)
+                .execute(conn)?;
+
+            println!("  IMPORTED {} - {}", id, p.title);
+            imported += 1;
+        }
+
+        // Preserved numbers must not be reissued: push the sequence past the
+        // highest one imported. GREATEST keeps it where it is if the UI has
+        // already gone further.
+        if imported > 0 {
+            diesel::sql_query(format!(
+                "SELECT setval('risk_number_seq', GREATEST({}, (SELECT last_value FROM risk_number_seq)), true)",
+                max_number
+            ))
+            .execute(conn)?;
+            println!("\nRisk sequence advanced past RISK-{:03}", max_number);
+        }
+
+        println!(
+            "\nImport complete: {} imported, {} skipped",
+            imported, skipped
+        );
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
-fn establish_connection() -> PgConnection {
+pub(crate) fn establish_connection() -> PgConnection {
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     PgConnection::establish(&database_url)
@@ -991,19 +1465,18 @@ fn main() -> anyhow::Result<()> {
 
             if rows.is_empty() {
                 println!("No deleted items.");
-                return Ok(());
-            }
-
-            println!("{:<12} {:<20} {:<20} Title", "ID", "Deleted", "By");
-            println!("{}", "-".repeat(90));
-            for (id, title, deleted_at, deleted_by) in rows {
-                println!(
-                    "{:<12} {:<20} {:<20} {}",
-                    id,
-                    deleted_at.format("%Y-%m-%d %H:%M UTC"),
-                    deleted_by.unwrap_or_else(|| "unknown".to_string()),
-                    title
-                );
+            } else {
+                println!("{:<12} {:<20} {:<20} Title", "ID", "Deleted", "By");
+                println!("{}", "-".repeat(90));
+                for (id, title, deleted_at, deleted_by) in rows {
+                    println!(
+                        "{:<12} {:<20} {:<20} {}",
+                        id,
+                        deleted_at.format("%Y-%m-%d %H:%M UTC"),
+                        deleted_by.unwrap_or_else(|| "unknown".to_string()),
+                        title
+                    );
+                }
             }
         }
 
@@ -1040,6 +1513,77 @@ fn main() -> anyhow::Result<()> {
             dry_run,
         } => {
             import_csv(file, vendor, dry_run)?;
+        }
+
+        Commands::ListDeletedRisks => {
+            let mut conn = establish_connection();
+
+            let rows: Vec<(
+                String,
+                String,
+                chrono::DateTime<chrono::Utc>,
+                Option<String>,
+            )> = risks::table
+                .left_join(users::table.on(users::id.nullable().eq(risks::deleted_by_id)))
+                .filter(risks::deleted_at.is_not_null())
+                .order(risks::deleted_at.desc())
+                .select((
+                    risks::id,
+                    risks::title,
+                    risks::deleted_at.assume_not_null(),
+                    users::name.nullable(),
+                ))
+                .load(&mut conn)?;
+
+            if rows.is_empty() {
+                println!("No deleted risks.");
+                return Ok(());
+            }
+
+            println!("{:<12} {:<20} {:<20} Risk", "ID", "Deleted", "By");
+            println!("{}", "-".repeat(90));
+            for (id, title, deleted_at, deleted_by) in rows {
+                println!(
+                    "{:<12} {:<20} {:<20} {}",
+                    id,
+                    deleted_at.format("%Y-%m-%d %H:%M UTC"),
+                    deleted_by.unwrap_or_else(|| "unknown".to_string()),
+                    title
+                );
+            }
+        }
+
+        Commands::RestoreRisk { id } => {
+            let mut conn = establish_connection();
+
+            let restored = diesel::update(
+                risks::table
+                    .filter(risks::id.eq(&id))
+                    .filter(risks::deleted_at.is_not_null()),
+            )
+            .set((
+                risks::deleted_at.eq(None::<chrono::DateTime<chrono::Utc>>),
+                risks::deleted_by_id.eq(None::<i32>),
+            ))
+            .execute(&mut conn)?;
+
+            if restored == 0 {
+                anyhow::bail!(
+                    "No deleted risk with ID {id}. Run list-deleted-risks to see what there is."
+                );
+            }
+
+            // Item links were never removed, so the risk comes back with them.
+            println!("Restored {id}. It is visible in the risk register again.");
+        }
+
+        Commands::ImportRisksCsv {
+            file,
+            vendor,
+            created_by,
+            dry_run,
+        } => {
+            import_risks_csv(file, vendor, created_by, dry_run)?;
         }
     }
 

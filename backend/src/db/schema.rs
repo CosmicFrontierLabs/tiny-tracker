@@ -1,6 +1,17 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    action_item_risks (action_item_id, risk_id) {
+        #[max_length = 20]
+        action_item_id -> Varchar,
+        #[max_length = 20]
+        risk_id -> Varchar,
+        linked_by_id -> Int4,
+        linked_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     action_items (id) {
         #[max_length = 20]
         id -> Varchar,
@@ -44,6 +55,39 @@ diesel::table! {
         author_id -> Int4,
         content -> Text,
         created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    risks (id) {
+        #[max_length = 20]
+        id -> Varchar,
+        vendor_id -> Int4,
+        number -> Int4,
+        #[max_length = 100]
+        component -> Nullable<Varchar>,
+        #[max_length = 100]
+        category -> Varchar,
+        #[max_length = 500]
+        title -> Varchar,
+        cause -> Nullable<Text>,
+        effect -> Nullable<Text>,
+        severity -> Float8,
+        likelihood -> Float8,
+        mitigation -> Nullable<Text>,
+        #[max_length = 50]
+        test_type -> Nullable<Varchar>,
+        verification -> Nullable<Text>,
+        #[max_length = 20]
+        status -> Varchar,
+        #[max_length = 20]
+        trend -> Varchar,
+        opened_on -> Date,
+        created_by_id -> Int4,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        deleted_at -> Nullable<Timestamptz>,
+        deleted_by_id -> Nullable<Int4>,
     }
 }
 
@@ -111,20 +155,26 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(action_item_risks -> action_items (action_item_id));
+diesel::joinable!(action_item_risks -> risks (risk_id));
+diesel::joinable!(action_item_risks -> users (linked_by_id));
 diesel::joinable!(action_items -> categories (category_id));
 diesel::joinable!(action_items -> vendors (vendor_id));
 diesel::joinable!(categories -> vendors (vendor_id));
 diesel::joinable!(notes -> action_items (action_item_id));
 diesel::joinable!(notes -> users (author_id));
+diesel::joinable!(risks -> vendors (vendor_id));
 diesel::joinable!(status_history -> action_items (action_item_id));
 diesel::joinable!(status_history -> users (changed_by_id));
 diesel::joinable!(vendor_allowed_domains -> vendors (vendor_id));
 diesel::joinable!(vendor_magic_links -> vendors (vendor_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    action_item_risks,
     action_items,
     categories,
     notes,
+    risks,
     status_history,
     users,
     vendor_allowed_domains,

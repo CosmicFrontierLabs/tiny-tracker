@@ -8,6 +8,7 @@ name = "action-tracker-cli"
 path = "src/main.rs"
 
 [dependencies]
+shared = { path = "../shared" }
 
 # Database
 diesel = { version = "2", features = ["postgres", "chrono"] }
