@@ -7,6 +7,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
+use crate::components::tracking_ids::tracking_id_chips;
 use crate::pages::status_style::{priority_class, status_class};
 
 // (display_name, api_value)
@@ -153,6 +154,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
     let editing_description = use_state(|| false);
     let edit_title_value = use_state(String::new);
     let edit_description_value = use_state(String::new);
+    let editing_tracking_ids = use_state(|| false);
+    let edit_tracking_ids_value = use_state(String::new);
     let saving = use_state(|| false);
 
     let item_id = props.item_id.clone();
@@ -522,6 +525,83 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
         })
     };
 
+    // Vendor tracking IDs editing handlers. Single-line, so Enter saves like
+    // the title does; the server trims and folds "" to NULL.
+    let on_tracking_ids_click = {
+        let editing_tracking_ids = editing_tracking_ids.clone();
+        let edit_tracking_ids_value = edit_tracking_ids_value.clone();
+        let item = item.clone();
+        Callback::from(move |_| {
+            if let Some(ref i) = *item {
+                edit_tracking_ids_value.set(i.vendor_tracking_ids.clone().unwrap_or_default());
+                editing_tracking_ids.set(true);
+            }
+        })
+    };
+
+    let on_tracking_ids_input = {
+        let edit_tracking_ids_value = edit_tracking_ids_value.clone();
+        Callback::from(move |e: InputEvent| {
+            let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
+            edit_tracking_ids_value.set(input.value());
+        })
+    };
+
+    let on_tracking_ids_blur = {
+        let editing_tracking_ids = editing_tracking_ids.clone();
+        let edit_tracking_ids_value = edit_tracking_ids_value.clone();
+        let item = item.clone();
+        let saving = saving.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let item_id = item_id.clone();
+        Callback::from(move |_| {
+            let new_value = (*edit_tracking_ids_value).trim().to_string();
+            let current_value = (*item)
+                .as_ref()
+                .and_then(|i| i.vendor_tracking_ids.clone())
+                .unwrap_or_default();
+
+            if new_value == current_value {
+                editing_tracking_ids.set(false);
+                return;
+            }
+
+            let editing_tracking_ids = editing_tracking_ids.clone();
+            let saving = saving.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let item_id = item_id.clone();
+
+            saving.set(true);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = if new_value.is_empty() {
+                    serde_json::json!({ "vendor_tracking_ids": null })
+                } else {
+                    serde_json::json!({ "vendor_tracking_ids": new_value })
+                };
+
+                if patch_item(&item_id, body).await {
+                    refresh_trigger.set(*refresh_trigger + 1);
+                }
+                saving.set(false);
+                editing_tracking_ids.set(false);
+            });
+        })
+    };
+
+    let on_tracking_ids_keydown = {
+        let on_tracking_ids_blur = on_tracking_ids_blur.clone();
+        let editing_tracking_ids = editing_tracking_ids.clone();
+        Callback::from(move |e: KeyboardEvent| {
+            if e.key() == "Enter" {
+                e.prevent_default();
+                on_tracking_ids_blur.emit(FocusEvent::new("blur").unwrap());
+            } else if e.key() == "Escape" {
+                editing_tracking_ids.set(false);
+            }
+        })
+    };
+
     // Status change handler
     let on_status_change = {
         let item = item.clone();
@@ -756,39 +836,9 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 </h2>
                             }
                         </div>
-                        <div class="modal-header-actions">
-                            if props.is_admin {
-                                if *confirming_delete {
-                                    <span class="delete-confirm-prompt">{ "Delete this item?" }</span>
-                                    <button
-                                        type="button"
-                                        class="btn btn-small btn-danger"
-                                        onclick={on_delete_confirm}
-                                        disabled={*deleting}
-                                    >
-                                        { if *deleting { "Deleting..." } else { "Yes, delete" } }
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-small"
-                                        onclick={on_delete_cancel}
-                                        disabled={*deleting}
-                                    >
-                                        { "Cancel" }
-                                    </button>
-                                } else {
-                                    <button type="button" class="btn btn-small btn-danger" onclick={on_delete_click}>
-                                        { "Delete" }
-                                    </button>
-                                }
-                            }
-                            <button type="button" class="modal-close" onclick={on_close_btn}>{ "×" }</button>
-                        </div>
+                        <button type="button" class="modal-close" onclick={on_close_btn}>{ "×" }</button>
                     </div>
                     <div class="modal-body">
-                        if let Some(err) = (*delete_error).clone() {
-                            <p class="error">{ err }</p>
-                        }
                         <div class="item-meta">
                             <span class="meta-item">
                                 <strong>{ "Created: " }</strong>{ format_naive_date(&i.create_date) }
@@ -907,6 +957,30 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                             }
                         </div>
 
+                        <div class="tracking-ids-section">
+                            <h3>{ "Vendor Tracking IDs" }</h3>
+                            if *editing_tracking_ids {
+                                <input
+                                    type="text"
+                                    class="tracking-ids-edit-input"
+                                    value={(*edit_tracking_ids_value).clone()}
+                                    oninput={on_tracking_ids_input}
+                                    onblur={on_tracking_ids_blur}
+                                    onkeydown={on_tracking_ids_keydown}
+                                    placeholder="e.g. VND-4521, https://vendor.example/tickets/4521"
+                                    autofocus=true
+                                />
+                                <p class="edit-hint">{ "Separate with commas. Enter to save, Escape to cancel" }</p>
+                            } else {
+                                <div class="tracking-ids-content editable" onclick={on_tracking_ids_click} title="Click to edit">
+                                    { match i.vendor_tracking_ids.as_deref() {
+                                        Some(ids) if !ids.trim().is_empty() => tracking_id_chips(ids),
+                                        _ => html! { <span class="placeholder">{ "Click to add the vendor's ticket IDs or links..." }</span> },
+                                    } }
+                                </div>
+                            }
+                        </div>
+
                         <h3>{ "Activity" }</h3>
 
                         <form class="add-update-form" onsubmit={on_add_update}>
@@ -966,6 +1040,39 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 </ul>
                             }
                         </div>
+
+                        // Deliberately far from the header's close button so a
+                        // reflexive click to dismiss the modal cannot land here.
+                        if props.is_admin {
+                            <div class="danger-zone">
+                                if let Some(err) = (*delete_error).clone() {
+                                    <p class="error">{ err }</p>
+                                }
+                                if *confirming_delete {
+                                    <span class="delete-confirm-prompt">{ "Delete this item?" }</span>
+                                    <button
+                                        type="button"
+                                        class="btn btn-small btn-danger"
+                                        onclick={on_delete_confirm}
+                                        disabled={*deleting}
+                                    >
+                                        { if *deleting { "Deleting..." } else { "Yes, delete" } }
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-small"
+                                        onclick={on_delete_cancel}
+                                        disabled={*deleting}
+                                    >
+                                        { "Cancel" }
+                                    </button>
+                                } else {
+                                    <button type="button" class="btn btn-small btn-danger" onclick={on_delete_click}>
+                                        { "Delete item" }
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
                 } else {
                     <div class="modal-header">

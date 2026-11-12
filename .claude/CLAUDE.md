@@ -175,6 +175,18 @@ cargo run -p cli -- list-deleted
 cargo run -p cli -- restore-item --id AD-001
 ```
 
+### Vendor tracking IDs are free text, not a table
+
+`action_items.vendor_tracking_ids` is a nullable `TEXT` holding the vendor's
+own ticket references — keys like `VND-4521` or full URLs, comma-separated.
+It is deliberately not a structured table or a per-vendor URL template: an
+item maps to one or two external tickets, staff paste whatever the vendor
+sent, and guessing a URL for a bare key would send people to the wrong place.
+The server trims and folds blank input to `NULL`; the frontend splits on
+commas, semicolons and newlines and only linkifies tokens that start with
+`http(s)://`. The vendor portal shows it too, so the vendor can match our ID
+to theirs.
+
 ### API responses use shared types, not `json!`
 Backend route handlers must serialize responses using structs from the `shared` crate (e.g. `shared::Vendor`, `shared::VendorWithCounts`), not ad-hoc `serde_json::json!({})` objects. This keeps the frontend and backend type contracts in sync.
 
