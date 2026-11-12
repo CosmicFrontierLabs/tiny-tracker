@@ -233,6 +233,22 @@ refuses numbers already used by another vendor's risks, advances the sequence
 past the highest imported number, and warns when the sheet's Level disagrees
 with the computed one.
 
+### Renaming a vendor prefix rewrites its item IDs
+
+An action item's user-facing ID (`AD-001`) is also its primary key, and
+notes, status history and risk links reference that string. Nothing else
+links through the prefix: items and risks point at `vendors.id`. So a prefix
+rename means rewriting the item IDs, and `PATCH /api/vendors/:id` with
+`{"prefix": "NEW"}` does exactly that in one transaction: update the vendor,
+then `UPDATE action_items SET id = new || substr(id, len+1)` for that vendor,
+with the three child tables following via `ON UPDATE CASCADE` (migration
+`000014`). Either everything renames or nothing does. Risk IDs (`RISK-034`)
+carry no prefix and are untouched.
+
+Old deep links (`/go/AD-001`, `/items/AD-001`) stop resolving after a rename;
+there is no redirect table, because renames are meant to be rare and the
+Manage Vendors UI says so before it lets you confirm.
+
 ### Vendor tracking IDs are free text, not a table
 
 `action_items.vendor_tracking_ids` is a nullable `TEXT` holding the vendor's
@@ -260,7 +276,7 @@ All `/api/*` routes require authentication (JWT cookie).
 | POST | `/auth/logout` | Clear session |
 | GET | `/auth/me` | Current user info |
 | GET/POST | `/api/vendors` | List / create vendors |
-| GET/PATCH | `/api/vendors/:id` | Get / update vendor |
+| GET/PATCH | `/api/vendors/:id` | Get / update vendor (a `prefix` change rewrites its item IDs) |
 | GET | `/api/items` | List all items |
 | GET/POST | `/api/vendors/:id/items` | List / create items for vendor |
 | GET/PATCH/DELETE | `/api/items/:id` | Get / update / soft-delete item (delete is admin-only) |

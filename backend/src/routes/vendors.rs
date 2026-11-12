@@ -5,12 +5,14 @@ use axum::{
     Json,
 };
 use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
+use diesel_async::scoped_futures::ScopedFutureExt;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde::Deserialize;
 use shared::{ApiError, CreateVendor, UpdateVendor as UpdateVendorReq, VendorWithCounts};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, vendors};
+use crate::models::Vendor as VendorRow;
 use crate::models::{NewVendor, UpdateVendor, Vendor};
 use crate::AppState;
 
@@ -26,6 +28,108 @@ fn to_shared_vendor(v: &Vendor) -> shared::Vendor {
         created_at: v.created_at,
         archived: v.archived,
     }
+}
+
+/// Prefix rules shared by create and rename: 2-5 ASCII uppercase letters.
+fn validate_prefix(prefix: &str) -> Result<(), ApiError> {
+    if prefix.len() < 2 || prefix.len() > 5 {
+        return Err(ApiError::validation_error("Prefix must be 2-5 characters"));
+    }
+    if !prefix.chars().all(|c| c.is_ascii_uppercase()) {
+        return Err(ApiError::validation_error(
+            "Prefix must be uppercase letters only",
+        ));
+    }
+    Ok(())
+}
+
+/// Outcome of a vendor update, including a prefix rename if one happened.
+enum UpdateOutcome {
+    Updated(VendorRow),
+    NotFound,
+    PrefixTaken,
+}
+
+/// Apply the changeset and, if the prefix is changing, rewrite every item ID
+/// for the vendor in the same transaction. The child tables (notes, status
+/// history, risk links) follow via ON UPDATE CASCADE, so either the vendor,
+/// its items and everything hanging off them all rename, or nothing does.
+async fn apply_update(
+    conn: &mut diesel_async::AsyncPgConnection,
+    id: i32,
+    changeset: UpdateVendor,
+    new_prefix: Option<String>,
+) -> Result<UpdateOutcome, diesel::result::Error> {
+    conn.transaction::<_, diesel::result::Error, _>(|conn| {
+        async move {
+            let current: Option<VendorRow> = vendors::table
+                .filter(vendors::id.eq(id))
+                .first(conn)
+                .await
+                .optional()?;
+            let Some(current) = current else {
+                return Ok(UpdateOutcome::NotFound);
+            };
+
+            if let Some(new_prefix) = new_prefix.filter(|p| *p != current.prefix) {
+                let taken = diesel::update(vendors::table.filter(vendors::id.eq(id)))
+                    .set(vendors::prefix.eq(&new_prefix))
+                    .execute(conn)
+                    .await;
+                match taken {
+                    Ok(_) => {}
+                    Err(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::UniqueViolation,
+                        _,
+                    )) => return Ok(UpdateOutcome::PrefixTaken),
+                    Err(e) => return Err(e),
+                }
+
+                // Keep whatever follows the old prefix ("-001") verbatim rather
+                // than re-deriving it from `number`, so imported IDs with
+                // unusual padding survive the rename unchanged apart from the
+                // prefix. substr() is 1-based: position len+1 is the hyphen.
+                let rewritten = diesel::sql_query(
+                    "UPDATE action_items SET id = $1 || substr(id, $2) WHERE vendor_id = $3",
+                )
+                .bind::<diesel::sql_types::Text, _>(&new_prefix)
+                .bind::<diesel::sql_types::Integer, _>(current.prefix.len() as i32 + 1)
+                .bind::<diesel::sql_types::Integer, _>(id)
+                .execute(conn)
+                .await?;
+
+                tracing::info!(
+                    vendor_id = id,
+                    from = %current.prefix,
+                    to = %new_prefix,
+                    items = rewritten,
+                    "vendor prefix renamed"
+                );
+            }
+
+            // Diesel rejects an UPDATE with an empty changeset, and a
+            // prefix-only request has exactly that, so only apply it when
+            // there is something in it.
+            let has_changes = changeset.name.is_some()
+                || changeset.description.is_some()
+                || changeset.archived.is_some();
+            let updated: VendorRow = if has_changes {
+                diesel::update(vendors::table.filter(vendors::id.eq(id)))
+                    .set(&changeset)
+                    .returning(VendorRow::as_returning())
+                    .get_result(conn)
+                    .await?
+            } else {
+                vendors::table
+                    .filter(vendors::id.eq(id))
+                    .first(conn)
+                    .await?
+            };
+            Ok(UpdateOutcome::Updated(updated))
+        }
+        .scope_boxed()
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -122,22 +226,8 @@ pub async fn create(
     _auth: AuthUser,
     Json(payload): Json<CreateVendor>,
 ) -> impl IntoResponse {
-    // Validate prefix
-    if payload.prefix.len() < 2 || payload.prefix.len() > 5 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::validation_error("Prefix must be 2-5 characters")),
-        )
-            .into_response();
-    }
-    if !payload.prefix.chars().all(|c| c.is_ascii_uppercase()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::validation_error(
-                "Prefix must be uppercase letters only",
-            )),
-        )
-            .into_response();
+    if let Err(e) = validate_prefix(&payload.prefix) {
+        return (StatusCode::BAD_REQUEST, Json(e)).into_response();
     }
 
     // Validate name
@@ -190,7 +280,7 @@ pub async fn create(
 pub async fn update(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(payload): Json<UpdateVendorReq>,
 ) -> impl IntoResponse {
     // Validate name if provided
@@ -201,6 +291,13 @@ pub async fn update(
                 Json(ApiError::validation_error("Name must be 1-255 characters")),
             )
                 .into_response();
+        }
+    }
+
+    let new_prefix = payload.prefix.map(|p| p.trim().to_uppercase());
+    if let Some(ref prefix) = new_prefix {
+        if let Err(e) = validate_prefix(prefix) {
+            return (StatusCode::BAD_REQUEST, Json(e)).into_response();
         }
     }
 
@@ -215,17 +312,24 @@ pub async fn update(
         archived: payload.archived,
     };
 
-    let result: Result<Vendor, _> = diesel::update(vendors::table.filter(vendors::id.eq(id)))
-        .set(&changeset)
-        .returning(Vendor::as_returning())
-        .get_result(&mut conn)
-        .await;
-
-    match result {
-        Ok(v) => Json(to_shared_vendor(&v)).into_response(),
-        Err(diesel::NotFound) => (
+    match apply_update(&mut conn, id, changeset, new_prefix.clone()).await {
+        Ok(UpdateOutcome::Updated(v)) => {
+            if new_prefix.is_some() {
+                tracing::info!(vendor_id = id, user = %auth.email, "vendor updated with prefix change");
+            }
+            Json(to_shared_vendor(&v)).into_response()
+        }
+        Ok(UpdateOutcome::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(ApiError::not_found(format!("Vendor {} not found", id))),
+        )
+            .into_response(),
+        Ok(UpdateOutcome::PrefixTaken) => (
+            StatusCode::CONFLICT,
+            Json(ApiError::conflict(format!(
+                "Vendor with prefix '{}' already exists",
+                new_prefix.unwrap_or_default()
+            ))),
         )
             .into_response(),
         Err(_) => (
