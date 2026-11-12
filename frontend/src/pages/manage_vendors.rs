@@ -29,6 +29,13 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
     // Which vendor's portal-domain editor is open, if any.
     let expanded_vendor = use_state(|| None::<i32>);
 
+    // Inline prefix rename. Rare, and it rewrites every item ID for the
+    // vendor, so it is opt-in per row and shows what it is about to do.
+    let renaming_vendor = use_state(|| None::<i32>);
+    let rename_value = use_state(String::new);
+    let rename_error = use_state(|| None::<String>);
+    let renaming = use_state(|| false);
+
     let new_prefix = use_state(String::new);
     let new_name = use_state(String::new);
     let new_description = use_state(String::new);
@@ -234,8 +241,9 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                             <tbody>
                                 { for active_vendors.iter().map(|v| {
                                     let vendor_id = v.id;
-                                    let refresh_trigger = refresh_trigger.clone();
-                                    let on_archive = Callback::from(move |_: MouseEvent| {
+                                    let on_archive = {
+                                        let refresh_trigger = refresh_trigger.clone();
+                                        Callback::from(move |_: MouseEvent| {
                                         let refresh_trigger = refresh_trigger.clone();
                                         wasm_bindgen_futures::spawn_local(async move {
                                             let body = serde_json::json!({ "archived": true });
@@ -247,7 +255,8 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                                 .await;
                                             refresh_trigger.set(*refresh_trigger + 1);
                                         });
-                                    });
+                                        })
+                                    };
                                     let is_expanded = *expanded_vendor == Some(vendor_id);
                                     let on_toggle_domains = {
                                         let expanded_vendor = expanded_vendor.clone();
@@ -255,10 +264,92 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                             expanded_vendor.set(if is_expanded { None } else { Some(vendor_id) });
                                         })
                                     };
+                                    let is_renaming = *renaming_vendor == Some(vendor_id);
+                                    let on_rename_start = {
+                                        let renaming_vendor = renaming_vendor.clone();
+                                        let rename_value = rename_value.clone();
+                                        let rename_error = rename_error.clone();
+                                        let prefix = v.prefix.clone();
+                                        Callback::from(move |_: MouseEvent| {
+                                            rename_value.set(prefix.clone());
+                                            rename_error.set(None);
+                                            renaming_vendor.set(Some(vendor_id));
+                                        })
+                                    };
+                                    let on_rename_cancel = {
+                                        let renaming_vendor = renaming_vendor.clone();
+                                        Callback::from(move |_: MouseEvent| renaming_vendor.set(None))
+                                    };
+                                    let on_rename_input = {
+                                        let rename_value = rename_value.clone();
+                                        Callback::from(move |e: InputEvent| {
+                                            let input: HtmlInputElement = e.target().unwrap().dyn_into().unwrap();
+                                            rename_value.set(input.value().to_uppercase());
+                                        })
+                                    };
+                                    let on_rename_save = {
+                                        let renaming_vendor = renaming_vendor.clone();
+                                        let rename_value = rename_value.clone();
+                                        let rename_error = rename_error.clone();
+                                        let renaming = renaming.clone();
+                                        let refresh_trigger = refresh_trigger.clone();
+                                        let old_prefix = v.prefix.clone();
+                                        Callback::from(move |_: MouseEvent| {
+                                            let new_prefix = rename_value.trim().to_string();
+                                            if new_prefix == old_prefix {
+                                                renaming_vendor.set(None);
+                                                return;
+                                            }
+                                            let renaming_vendor = renaming_vendor.clone();
+                                            let rename_error = rename_error.clone();
+                                            let renaming = renaming.clone();
+                                            let refresh_trigger = refresh_trigger.clone();
+                                            renaming.set(true);
+                                            rename_error.set(None);
+                                            wasm_bindgen_futures::spawn_local(async move {
+                                                let body = serde_json::json!({ "prefix": new_prefix });
+                                                match Request::patch(&format!("/api/vendors/{}", vendor_id))
+                                                    .header("Content-Type", "application/json")
+                                                    .body(body.to_string())
+                                                    .unwrap()
+                                                    .send()
+                                                    .await
+                                                {
+                                                    Ok(resp) if resp.ok() => {
+                                                        renaming_vendor.set(None);
+                                                        refresh_trigger.set(*refresh_trigger + 1);
+                                                    }
+                                                    Ok(resp) => {
+                                                        let msg = resp.text().await.unwrap_or_else(|_| "Rename failed".into());
+                                                        rename_error.set(Some(msg));
+                                                    }
+                                                    Err(e) => rename_error.set(Some(format!("Request error: {}", e))),
+                                                }
+                                                renaming.set(false);
+                                            });
+                                        })
+                                    };
                                     html! {
                                         <>
                                         <tr>
-                                            <td>{ &v.prefix }</td>
+                                            <td>
+                                                if is_renaming {
+                                                    <input
+                                                        type="text"
+                                                        class="prefix-rename-input"
+                                                        value={(*rename_value).clone()}
+                                                        oninput={on_rename_input}
+                                                        maxlength="5"
+                                                        disabled={*renaming}
+                                                        autofocus=true
+                                                    />
+                                                } else {
+                                                    <span class="prefix-cell">
+                                                        { &v.prefix }
+                                                        <button type="button" class="prefix-rename-btn" title="Rename prefix" onclick={on_rename_start}>{ "✎" }</button>
+                                                    </span>
+                                                }
+                                            </td>
                                             <td>{ &v.name }</td>
                                             <td>{ v.description.as_deref().unwrap_or("-") }</td>
                                             <td>
@@ -272,6 +363,31 @@ pub fn manage_vendors_modal(props: &ManageVendorsModalProps) -> Html {
                                                 </div>
                                             </td>
                                         </tr>
+                                        if is_renaming {
+                                            <tr class="vendor-rename-row">
+                                                <td colspan="4">
+                                                    <div class="vendor-rename">
+                                                        <p class="vendor-rename-hint">
+                                                            { format!(
+                                                                "Renaming rewrites every item ID for {} ({}-001 becomes {}-001), including notes, history and risk links. Old links to the previous IDs will stop working.",
+                                                                v.name, v.prefix,
+                                                                if rename_value.is_empty() { "NEW".to_string() } else { (*rename_value).clone() }
+                                                            ) }
+                                                        </p>
+                                                        if let Some(err) = (*rename_error).clone() {
+                                                            <p class="error">{ err }</p>
+                                                        }
+                                                        <div class="vendor-row-actions">
+                                                            <button type="button" class="btn btn-small btn-danger" onclick={on_rename_save}
+                                                                disabled={*renaming || rename_value.trim().len() < 2}>
+                                                                { if *renaming { "Renaming..." } else { "Rename and rewrite IDs" } }
+                                                            </button>
+                                                            <button type="button" class="btn btn-small" onclick={on_rename_cancel} disabled={*renaming}>{ "Cancel" }</button>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
                                         if is_expanded {
                                             <tr class="vendor-domains-row">
                                                 <td colspan="4">

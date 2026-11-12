@@ -1794,3 +1794,46 @@ td.risk-score.risk-level-low, span.risk-score.risk-level-low { color: #1e8449; }
     margin-top: 0.5rem;
 }
 
+/* Vendor prefix rename */
+.prefix-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.prefix-rename-btn {
+    background: none;
+    border: none;
+    color: #95a5a6;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.prefix-rename-btn:hover {
+    color: #2c3e50;
+}
+
+.prefix-rename-input {
+    width: 5rem;
+    padding: 0.3rem 0.4rem;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.vendor-rename-row td {
+    background: #fdf6f0;
+}
+
+.vendor-rename-hint {
+    margin: 0 0 0.5rem;
+    color: #7a4b00;
+    font-size: 0.85rem;
+}
+
+.vendor-rename .error {
+    margin-bottom: 0.5rem;
+}

@@ -190,6 +190,11 @@ pub struct UpdateVendor {
     pub name: Option<String>,
     pub description: Option<String>,
     pub archived: Option<bool>,
+    /// Renaming the prefix rewrites the ID of every action item for this
+    /// vendor (`AD-001` becomes `NEW-001`) in the same transaction. Rare, and
+    /// deliberately so: old deep links to the previous IDs stop resolving.
+    #[serde(default)]
+    pub prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

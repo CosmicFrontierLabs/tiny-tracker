@@ -36,6 +36,11 @@ a new secret — belongs here, because the deploy config lives in a different re
 
   No new environment variables.
 
+- **Vendor prefix rename.** The prefix is editable from Manage Vendors. A
+  rename rewrites every action item ID for that vendor (`AD-001` becomes
+  `NEW-001`) together with its notes, status history and risk links, in one
+  transaction. Old deep links to the previous IDs stop resolving.
+
 - **Admin-only item deletion, as a soft delete.** The ticket modal shows a
   `Delete` button to admins, which arms on the first click and only sends the
   request on the second. `DELETE /api/items/:id` marks the item deleted rather
@@ -81,6 +86,9 @@ a new secret — belongs here, because the deploy config lives in a different re
   a safe variable to add after the image ships rather than before.
 
 ### Database
+
+- Migration `2026-11-12-000014_vendor_prefix_rename` re-declares the three
+  foreign keys onto `action_items` with `ON UPDATE CASCADE`. No data changes.
 
 - Migration `2026-11-11-000013_risk_register` adds `risks`,
   `action_item_risks` and the `risk_number_seq` sequence. Purely additive;
