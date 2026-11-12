@@ -8,6 +8,7 @@ use web_sys::{HtmlInputElement, HtmlSelectElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
 use crate::components::tracking_ids::tracking_id_chips;
+use crate::components::ItemRisks;
 use crate::pages::status_style::{priority_class, status_class};
 
 // (display_name, api_value)
@@ -980,6 +981,8 @@ pub fn item_detail_modal(props: &ItemDetailModalProps) -> Html {
                                 </div>
                             }
                         </div>
+
+                        <ItemRisks item_id={i.id.clone()} />
 
                         <h3>{ "Activity" }</h3>
 
