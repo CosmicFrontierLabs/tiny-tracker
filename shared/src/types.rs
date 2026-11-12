@@ -499,3 +499,313 @@ pub struct MailStatus {
     /// Verbatim transport error from the last failure, for diagnosis.
     pub last_error: Option<String>,
 }
+
+// ============================================================================
+// Risk register
+// ============================================================================
+
+/// Where a risk is in its life. Stored as the display label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskStatus {
+    Open,
+    InWork,
+    Mitigated,
+    Accepted,
+}
+
+impl RiskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RiskStatus::Open => "Open",
+            RiskStatus::InWork => "In work",
+            RiskStatus::Mitigated => "Mitigated",
+            RiskStatus::Accepted => "Accepted",
+        }
+    }
+
+    pub fn all() -> &'static [RiskStatus] {
+        &[
+            RiskStatus::Open,
+            RiskStatus::InWork,
+            RiskStatus::Mitigated,
+            RiskStatus::Accepted,
+        ]
+    }
+
+    /// Parse the display label as stored in the database (case-insensitive).
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|s| s.as_str().eq_ignore_ascii_case(label.trim()))
+    }
+}
+
+/// Which way a risk is moving, as judged at review time. `Closed` is a trend
+/// rather than a status because that is how the register has always been
+/// kept: a mitigated risk stays `Mitigated`, and its trend records that it is
+/// no longer being watched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskTrend {
+    New,
+    Improving,
+    Stable,
+    Worsening,
+    Closed,
+}
+
+impl RiskTrend {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RiskTrend::New => "New",
+            RiskTrend::Improving => "Improving",
+            RiskTrend::Stable => "Stable",
+            RiskTrend::Worsening => "Worsening",
+            RiskTrend::Closed => "Closed",
+        }
+    }
+
+    pub fn all() -> &'static [RiskTrend] {
+        &[
+            RiskTrend::New,
+            RiskTrend::Improving,
+            RiskTrend::Stable,
+            RiskTrend::Worsening,
+            RiskTrend::Closed,
+        ]
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|t| t.as_str().eq_ignore_ascii_case(label.trim()))
+    }
+}
+
+/// Derived from the score, never stored. See [`risk_level`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskLevel {
+    High,
+    Medium,
+    Low,
+}
+
+impl RiskLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RiskLevel::High => "High",
+            RiskLevel::Medium => "Medium",
+            RiskLevel::Low => "Low",
+        }
+    }
+}
+
+/// Upper bound of the severity and likelihood scales.
+pub const RISK_SCALE_MAX: f64 = 5.0;
+
+/// A risk's score is severity times likelihood, each on a 0-5 scale, so the
+/// score runs 0-25.
+pub fn risk_score(severity: f64, likelihood: f64) -> f64 {
+    severity * likelihood
+}
+
+/// The register's banding: 15 and above is High, 8 and above is Medium,
+/// anything else is Low. The thresholds are the ones the team has always
+/// used, so a score of exactly 8 or 15 lands in the upper band.
+pub fn risk_level(score: f64) -> RiskLevel {
+    if score >= 15.0 {
+        RiskLevel::High
+    } else if score >= 8.0 {
+        RiskLevel::Medium
+    } else {
+        RiskLevel::Low
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RiskResponse {
+    /// `RISK-{NNN}`, e.g. `RISK-034`. One programme-wide series, not per
+    /// vendor; `vendor_id` says which vendor the risk is about.
+    pub id: String,
+    pub vendor_id: i32,
+    pub vendor_prefix: String,
+    pub number: i32,
+    /// Module, assembly or programme area the risk is against.
+    pub component: Option<String>,
+    pub category: String,
+    /// The risk statement itself.
+    pub title: String,
+    pub cause: Option<String>,
+    pub effect: Option<String>,
+    pub severity: f64,
+    pub likelihood: f64,
+    /// `severity * likelihood`. Derived, see [`risk_score`].
+    pub score: f64,
+    /// Derived from `score`, see [`risk_level`].
+    pub level: RiskLevel,
+    pub mitigation: Option<String>,
+    pub test_type: Option<String>,
+    /// Which tests, by ID, retire the risk.
+    pub verification: Option<String>,
+    pub status: RiskStatus,
+    pub trend: RiskTrend,
+    pub opened_on: NaiveDate,
+    pub created_by_id: i32,
+    pub created_by_name: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    /// Live (non-deleted) action items linked to this risk.
+    pub linked_item_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateRisk {
+    pub component: Option<String>,
+    pub category: String,
+    pub title: String,
+    pub cause: Option<String>,
+    pub effect: Option<String>,
+    pub severity: f64,
+    pub likelihood: f64,
+    pub mitigation: Option<String>,
+    pub test_type: Option<String>,
+    pub verification: Option<String>,
+    /// Defaults to `Open`.
+    pub status: Option<RiskStatus>,
+    /// Defaults to `New`.
+    pub trend: Option<RiskTrend>,
+    /// Defaults to today.
+    pub opened_on: Option<NaiveDate>,
+    /// Action items to link at creation. Every ID must be a live item or the
+    /// whole create is rejected, so a typo cannot leave a half-linked risk.
+    #[serde(default)]
+    pub item_ids: Vec<String>,
+}
+
+/// Deserialize a nullable, optional field so that an absent key is `None` and
+/// an explicit `null` is `Some(None)`. A plain `Option<Option<T>>` collapses
+/// both to `None`, which would make clearing a field indistinguishable from
+/// not mentioning it.
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(de).map(Some)
+}
+
+/// Every field optional. For nullable text, the outer `Option` is "was this
+/// field sent" and the inner one is the new value, so `Some(None)` clears it
+/// and `None` leaves it alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct UpdateRisk {
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub component: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cause: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub effect: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub severity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub likelihood: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mitigation: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub test_type: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub verification: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<RiskStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trend: Option<RiskTrend>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opened_on: Option<NaiveDate>,
+}
+
+/// Body of `POST /api/items/:id/risks`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinkRisk {
+    pub risk_id: String,
+}
+
+/// Body of `POST /api/risks/:id/items`: link several action items at once.
+/// Idempotent; items already linked are left alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinkItems {
+    pub item_ids: Vec<String>,
+}
+
+#[cfg(test)]
+mod risk_tests {
+    use super::*;
+
+    #[test]
+    fn level_bands_match_the_register_thresholds() {
+        // The spreadsheet formula is IF(score>=15,"High",IF(score>=8,"Medium","Low")).
+        assert_eq!(risk_level(risk_score(4.0, 4.0)), RiskLevel::High); // 16
+        assert_eq!(risk_level(risk_score(5.0, 3.0)), RiskLevel::High); // 15, inclusive
+        assert_eq!(risk_level(risk_score(4.0, 3.0)), RiskLevel::Medium); // 12
+        assert_eq!(risk_level(risk_score(2.0, 4.0)), RiskLevel::Medium); // 8, inclusive
+        assert_eq!(risk_level(risk_score(2.5, 3.0)), RiskLevel::Low); // 7.5
+        assert_eq!(risk_level(risk_score(3.0, 0.0)), RiskLevel::Low); // 0
+    }
+
+    #[test]
+    fn labels_round_trip_case_insensitively() {
+        for s in RiskStatus::all() {
+            assert_eq!(RiskStatus::from_label(s.as_str()), Some(*s));
+            assert_eq!(RiskStatus::from_label(&s.as_str().to_uppercase()), Some(*s));
+        }
+        for t in RiskTrend::all() {
+            assert_eq!(RiskTrend::from_label(t.as_str()), Some(*t));
+        }
+        assert_eq!(RiskStatus::from_label("in-work"), None);
+        assert_eq!(
+            RiskStatus::from_label(" in work "),
+            Some(RiskStatus::InWork)
+        );
+    }
+
+    #[test]
+    fn update_risk_distinguishes_clear_from_untouched() {
+        let cleared: UpdateRisk = serde_json::from_str(r#"{"cause": null}"#).unwrap();
+        assert_eq!(cleared.cause, Some(None));
+        assert_eq!(cleared.effect, None);
+
+        let untouched = UpdateRisk::default();
+        assert_eq!(serde_json::to_string(&untouched).unwrap(), "{}");
+    }
+}

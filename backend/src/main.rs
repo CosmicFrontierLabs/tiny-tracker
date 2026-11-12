@@ -20,8 +20,8 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use routes::{
-    activity, auth, categories, health, items, mail_test, notes, status, users, vendor_portal,
-    vendors,
+    activity, auth, categories, health, items, mail_test, notes, risks, status, users,
+    vendor_portal, vendors,
 };
 
 pub type DbPool = Pool<AsyncPgConnection>;
@@ -241,6 +241,28 @@ async fn main() -> anyhow::Result<()> {
         // Status routes
         .route("/api/items/:item_id/history", get(status::history))
         .route("/api/items/:item_id/status", post(status::change))
+        // Risk register
+        .route("/api/risks", get(risks::list_all))
+        .route(
+            "/api/vendors/:id/risks",
+            get(risks::list_by_vendor).post(risks::create),
+        )
+        .route(
+            "/api/risks/:risk_id",
+            get(risks::get).patch(risks::update).delete(risks::delete),
+        )
+        .route(
+            "/api/risks/:risk_id/items",
+            get(risks::items_for_risk).post(risks::link_items),
+        )
+        .route(
+            "/api/items/:item_id/risks",
+            get(risks::risks_for_item).post(risks::link),
+        )
+        .route(
+            "/api/items/:item_id/risks/:risk_id",
+            axum::routing::delete(risks::unlink),
+        )
         // User routes
         .route("/api/users", get(users::list))
         // Mail diagnostics

@@ -71,7 +71,7 @@ fn normalize_tracking_ids(raw: Option<String>) -> Result<Option<String>, ApiErro
 }
 
 /// Return an item's current status and when it was set, falling back to "New" / creation time.
-async fn current_status(
+pub(super) async fn current_status(
     conn: &mut AsyncPgConnection,
     item: &ActionItem,
 ) -> (String, DateTime<Utc>) {
@@ -89,7 +89,7 @@ async fn current_status(
 }
 
 /// Assemble an `ActionItemResponse` from an item plus its resolved category, users, and status.
-fn build_item_response(
+pub(super) fn build_item_response(
     item: ActionItem,
     category_name: String,
     creator: Option<&User>,
