@@ -1380,3 +1380,417 @@ main {
     color: #a93226;
     border: 1px solid #f5b7b1;
 }
+
+/* Header navigation between the two registers */
+.header-links {
+    display: flex;
+    gap: 0.25rem;
+    margin-left: auto;
+    margin-right: 1.5rem;
+}
+
+.header-link {
+    color: rgba(255, 255, 255, 0.75);
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.header-link:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.header-link.active {
+    background: rgba(255, 255, 255, 0.18);
+    color: white;
+}
+
+/* Risk register */
+.risk-count {
+    margin-left: auto;
+    color: #7f8c8d;
+    font-size: 0.85rem;
+}
+
+.risk-table-wrap {
+    overflow-x: auto;
+}
+
+.risk-table .num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.risk-table .risk-title {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.risk-table td {
+    white-space: nowrap;
+}
+
+.risk-table tr.risk-closed td {
+    color: #999;
+}
+
+.risk-score {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.risk-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.risk-badge.risk-level-high { background: #fdecea; color: #c0392b; }
+.risk-badge.risk-level-medium { background: #fef5e7; color: #b9770e; }
+.risk-badge.risk-level-low { background: #eafaf1; color: #1e8449; }
+
+td.risk-score.risk-level-high, span.risk-score.risk-level-high { color: #c0392b; }
+td.risk-score.risk-level-medium, span.risk-score.risk-level-medium { color: #b9770e; }
+td.risk-score.risk-level-low, span.risk-score.risk-level-low { color: #1e8449; }
+
+.risk-status-open { color: #3498db; }
+.risk-status-in-work { color: #9b59b6; }
+.risk-status-mitigated { color: #27ae60; }
+.risk-status-accepted { color: #7f8c8d; }
+
+.risk-trend-new { color: #3498db; }
+.risk-trend-improving { color: #27ae60; }
+.risk-trend-stable { color: #7f8c8d; }
+.risk-trend-worsening { color: #e74c3c; font-weight: 600; }
+.risk-trend-closed { color: #999; }
+
+/* Risk forms (create and edit) */
+.risk-form {
+    max-width: none;
+}
+
+.risk-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1rem;
+}
+
+.risk-form-scores {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+.risk-form textarea {
+    font-family: inherit;
+    resize: vertical;
+}
+
+.risk-score-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.4rem;
+    font-size: 1.1rem;
+}
+
+.risk-score-preview .placeholder {
+    color: #999;
+}
+
+.risk-edit-form {
+    padding: 0 0 1rem;
+}
+
+/* Risk detail */
+.risk-id-badge {
+    background: #8e44ad;
+}
+
+.risk-detail-title {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.risk-meta {
+    position: relative;
+    padding-right: 5rem;
+}
+
+.risk-score-parts {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    margin-left: 0.25rem;
+}
+
+.risk-edit-btn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+}
+
+.risk-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.risk-field h4 {
+    margin: 0 0 0.35rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #7f8c8d;
+}
+
+.risk-field-value {
+    background: #f8f9fa;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    min-height: 44px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+.risk-field-value .placeholder {
+    color: #999;
+    font-style: italic;
+}
+
+.risk-links-section h3 {
+    margin-bottom: 0.5rem;
+}
+
+.risk-linked-list {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    border: 1px solid #eee;
+    border-radius: 4px;
+}
+
+.risk-linked-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+}
+
+.risk-linked-row:last-child {
+    border-bottom: none;
+}
+
+.risk-linked-row:hover {
+    background: #e8f4fc;
+}
+
+.risk-linked-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.risk-link-picker {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.risk-link-picker select {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: white;
+}
+
+/* Risks section inside the action item modal */
+.item-risks-section {
+    margin-bottom: 1.5rem;
+}
+
+.item-risks-section h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
+.item-risks-content {
+    background: #f8f9fa;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+}
+
+.item-risks-content .placeholder {
+    display: block;
+    color: #999;
+    font-style: italic;
+    margin-bottom: 0.5rem;
+}
+
+.risk-chip-list {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.risk-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: white;
+    border: 1px solid #e3e8ee;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.risk-chip:hover {
+    border-color: #3498db;
+}
+
+.risk-chip-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.risk-chip-remove {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+}
+
+.risk-chip-remove:hover {
+    color: #c0392b;
+}
+
+@media (max-width: 768px) {
+    .header-links {
+        margin-right: 0.5rem;
+    }
+
+    .header-link {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .risk-form-grid,
+    .risk-form-scores,
+    .risk-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .risk-meta {
+        padding-right: 0.75rem;
+    }
+
+    .risk-edit-btn {
+        position: static;
+    }
+}
+
+/* Multi-select action item picker (new-risk form and risk detail) */
+.item-picker {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: white;
+}
+
+.item-picker-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #eee;
+}
+
+.item-picker-filter input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.item-picker-count {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.item-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.item-picker-list li label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    font-weight: normal;
+    margin: 0;
+}
+
+.item-picker-list li label:hover {
+    background: #e8f4fc;
+}
+
+.item-picker-list input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.item-picker-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.item-picker-list li.item-complete label {
+    color: #999;
+}
+
+.item-picker-empty {
+    padding: 0.6rem;
+    color: #999;
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
+.risk-link-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+}
+

@@ -11,6 +11,10 @@ pub enum Route {
     Home,
     #[at("/items/:id")]
     Item { id: String },
+    #[at("/risks")]
+    Risks,
+    #[at("/risks/:id")]
+    Risk { id: String },
     #[not_found]
     #[at("/404")]
     NotFound,
@@ -20,6 +24,8 @@ fn switch(routes: Route) -> Html {
     match routes {
         Route::Home => html! { <pages::home::Home /> },
         Route::Item { id } => html! { <pages::home::Home initial_item_id={id} /> },
+        Route::Risks => html! { <pages::risks::RiskRegister /> },
+        Route::Risk { id } => html! { <pages::risks::RiskRegister initial_risk_id={id} /> },
         Route::NotFound => html! { <pages::home::Home /> },
     }
 }

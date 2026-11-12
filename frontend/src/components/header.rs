@@ -8,6 +8,8 @@ use crate::Route;
 #[function_component(Header)]
 pub fn header() -> Html {
     let logging_out = use_state(|| false);
+    let route = use_route::<Route>();
+    let on_risks = matches!(route, Some(Route::Risks) | Some(Route::Risk { .. }));
 
     let on_logout = {
         let logging_out = logging_out.clone();
@@ -29,6 +31,14 @@ pub fn header() -> Html {
                 <Link<Route> to={Route::Home}>
                     <h1>{ "Cosmic Frontier" }<span class="header-subtitle">{ " Action Tracker" }</span></h1>
                 </Link<Route>>
+                <div class="header-links">
+                    <Link<Route> to={Route::Home} classes={classes!("header-link", (!on_risks).then_some("active"))}>
+                        { "Action Items" }
+                    </Link<Route>>
+                    <Link<Route> to={Route::Risks} classes={classes!("header-link", on_risks.then_some("active"))}>
+                        { "Risk Register" }
+                    </Link<Route>>
+                </div>
                 <button class="btn-logout" onclick={on_logout} disabled={*logging_out}>
                     { if *logging_out { "Logging out..." } else { "Logout" } }
                 </button>
