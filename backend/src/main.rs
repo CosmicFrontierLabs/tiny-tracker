@@ -55,13 +55,12 @@ impl AppConfig {
             .unwrap_or(false);
 
         Self {
-            jwt_secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-                if dev_mode {
-                    "dev-secret-do-not-use-in-production".to_string()
-                } else {
-                    panic!("JWT_SECRET must be set in production")
-                }
-            }),
+            jwt_secret: resolve_jwt_secret(
+                std::env::var("JWT_SECRET").ok(),
+                std::env::var_os("JWT_SECRET_FILE").map(std::path::PathBuf::from),
+                dev_mode,
+            )
+            .unwrap_or_else(|e| panic!("{e}")),
             dev_mode,
             dev_user_id: std::env::var("DEV_USER_ID")
                 .ok()
@@ -101,6 +100,54 @@ impl AppConfig {
         let email = email.to_lowercase();
         self.admin_emails.contains(&email)
     }
+}
+
+const DEV_JWT_SECRET: &str = "dev-secret-do-not-use-in-production";
+
+/// Resolve the JWT signing key from `JWT_SECRET` or `JWT_SECRET_FILE`.
+///
+/// The file form exists so the key can be bind-mounted read-only instead of
+/// living in the container environment (where `docker inspect` shows it and
+/// Watchtower copies it on every recreate). Exactly one trailing `\n` or
+/// `\r\n` is stripped, so a file written with `echo` holds the same key as
+/// the env var did: the result must be byte-identical, or every staff session
+/// and outstanding vendor magic link is invalidated at cutover.
+///
+/// A configured file that cannot be used is fatal in every mode, including dev
+/// mode: silently falling back to the dev key would be worse than not starting.
+///
+/// Errors never contain the key or its length.
+fn resolve_jwt_secret(
+    env_secret: Option<String>,
+    secret_file: Option<std::path::PathBuf>,
+    dev_mode: bool,
+) -> Result<String, String> {
+    match (env_secret, secret_file) {
+        (Some(_), Some(_)) => {
+            Err("JWT_SECRET and JWT_SECRET_FILE are both set; set exactly one".to_string())
+        }
+        (Some(secret), None) => Ok(secret),
+        (None, Some(path)) => read_jwt_secret_file(&path),
+        (None, None) if dev_mode => Ok(DEV_JWT_SECRET.to_string()),
+        (None, None) => Err("JWT_SECRET must be set in production".to_string()),
+    }
+}
+
+fn read_jwt_secret_file(path: &std::path::Path) -> Result<String, String> {
+    let shown = path.display();
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("JWT_SECRET_FILE {shown} could not be read: {e}"))?;
+    let mut secret = String::from_utf8(bytes)
+        .map_err(|_| format!("JWT_SECRET_FILE {shown} is not valid UTF-8"))?;
+    if secret.ends_with("\r\n") {
+        secret.truncate(secret.len() - 2);
+    } else if secret.ends_with('\n') {
+        secret.truncate(secret.len() - 1);
+    }
+    if secret.is_empty() {
+        return Err(format!("JWT_SECRET_FILE {shown} is empty"));
+    }
+    Ok(secret)
 }
 
 fn establish_connection(
@@ -347,5 +394,107 @@ mod config_tests {
     fn dev_mode_is_admin_because_it_already_bypasses_auth() {
         let config = config(true, &[]);
         assert!(config.is_admin("anyone@localhost"));
+    }
+}
+
+#[cfg(test)]
+mod jwt_secret_tests {
+    use super::{resolve_jwt_secret, DEV_JWT_SECRET};
+    use std::path::PathBuf;
+
+    /// A uniquely named temp file holding `contents`, removed on drop.
+    struct TempKey(PathBuf);
+
+    impl TempKey {
+        fn new(name: &str, contents: &[u8]) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("tiny-tracker-jwt-{}-{name}", std::process::id()));
+            std::fs::write(&path, contents).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempKey {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    fn from_file(name: &str, contents: &[u8], dev_mode: bool) -> Result<String, String> {
+        let file = TempKey::new(name, contents);
+        resolve_jwt_secret(None, Some(file.0.clone()), dev_mode)
+    }
+
+    #[test]
+    fn file_contents_are_the_secret() {
+        assert_eq!(from_file("plain", b"s3cret", false).unwrap(), "s3cret");
+    }
+
+    #[test]
+    fn file_matches_env_var_byte_for_byte_after_one_newline() {
+        // Cutover writes the current env value into the file; it must sign
+        // identically or every session and magic link dies.
+        let env = resolve_jwt_secret(Some("abc DEF=+/".into()), None, false).unwrap();
+        assert_eq!(from_file("lf", b"abc DEF=+/\n", false).unwrap(), env);
+        assert_eq!(from_file("crlf", b"abc DEF=+/\r\n", false).unwrap(), env);
+    }
+
+    #[test]
+    fn only_one_trailing_newline_is_stripped() {
+        assert_eq!(from_file("two-lf", b"key\n\n", false).unwrap(), "key\n");
+        assert_eq!(from_file("lead", b" key \n", false).unwrap(), " key ");
+    }
+
+    #[test]
+    fn both_set_is_an_error() {
+        let file = TempKey::new("both", b"from-file");
+        for dev_mode in [false, true] {
+            let err = resolve_jwt_secret(Some("from-env".into()), Some(file.0.clone()), dev_mode)
+                .unwrap_err();
+            assert!(err.contains("both set"), "{err}");
+        }
+    }
+
+    #[test]
+    fn missing_file_is_an_error_even_in_dev_mode() {
+        let path = std::env::temp_dir().join("tiny-tracker-jwt-definitely-missing");
+        for dev_mode in [false, true] {
+            assert!(resolve_jwt_secret(None, Some(path.clone()), dev_mode).is_err());
+        }
+    }
+
+    #[test]
+    fn empty_file_is_an_error_even_in_dev_mode() {
+        for dev_mode in [false, true] {
+            assert!(from_file("empty", b"", dev_mode).is_err());
+            assert!(from_file("only-lf", b"\n", dev_mode).is_err());
+            assert!(from_file("only-crlf", b"\r\n", dev_mode).is_err());
+        }
+    }
+
+    #[test]
+    fn non_utf8_file_is_an_error() {
+        assert!(from_file("binary", &[0xff, 0xfe, 0x00], false).is_err());
+    }
+
+    #[test]
+    fn errors_do_not_leak_the_secret() {
+        let file = TempKey::new("leak", b"hunter2-super-secret");
+        let err = resolve_jwt_secret(
+            Some("hunter2-super-secret".into()),
+            Some(file.0.clone()),
+            false,
+        )
+        .unwrap_err();
+        assert!(!err.contains("hunter2"));
+    }
+
+    #[test]
+    fn neither_set_keeps_existing_behaviour() {
+        assert!(resolve_jwt_secret(None, None, false).is_err());
+        assert_eq!(
+            resolve_jwt_secret(None, None, true).unwrap(),
+            DEV_JWT_SECRET
+        );
     }
 }

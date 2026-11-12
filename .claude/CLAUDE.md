@@ -132,6 +132,21 @@ container ID, and Google's relay treats the EHLO domain as one of two ways it
 identifies a sending domain. On the credential-less path there is no SMTP AUTH
 to identify us instead, so a hex container ID risks a `550 5.7.1`.
 
+### The JWT secret: env var or file, and what rotating it kills
+
+`JWT_SECRET` or `JWT_SECRET_FILE` (exactly one) supplies the key; see
+`resolve_jwt_secret` in `backend/src/main.rs`. The file form keeps the key out
+of the container environment, so it is absent from `docker inspect` and
+Watchtower does not copy it on recreate. Exactly one trailing newline is
+stripped and nothing else, so moving a value from the env var into a file
+written with `echo` signs identically and logs nobody out. Never log the value
+or its length.
+
+**Rotating the secret invalidates every staff session _and_ every outstanding
+vendor magic link and portal session**, because the vendor key is derived from
+it (`vendor_jwt_secret()`). Staff must sign in again and vendors must request a
+new link. Nothing else is lost.
+
 ### Admin is an env allowlist, checked per request
 
 `ADMIN_EMAILS` is a comma-separated, case-insensitive list of emails permitted to
@@ -315,7 +330,8 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `JWT_SECRET` | Prod only | Secret for signing JWTs |
+| `JWT_SECRET` | Prod only | Secret for signing JWTs. Set this **or** `JWT_SECRET_FILE`, never both |
+| `JWT_SECRET_FILE` | Alt. to `JWT_SECRET` | Path to a file holding the JWT secret (e.g. a read-only mount at `/run/secrets/session.key`). One trailing `\n`/`\r\n` is stripped; the rest is used byte-for-byte. Both set, or a missing/unreadable/empty/non-UTF-8 file, fails startup in every mode, dev included. The container runs as root, so any host file mode is readable |
 | `GOOGLE_CLIENT_ID` | Prod only | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Prod only | Google OAuth client secret |
 | `PUBLIC_URL` | Yes | Base URL for OAuth callbacks |
