@@ -362,7 +362,8 @@ Returns `500` if database connection fails.
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@host/db` |
-| `JWT_SECRET` | Secret key for signing/verifying JWTs | Random 32+ byte string |
+| `JWT_SECRET` | Secret key for signing/verifying JWTs (staff sessions and, via a derived key, vendor magic links). Set this or `JWT_SECRET_FILE`, not both. Rotating it invalidates staff sessions and outstanding vendor magic links | Random 32+ byte string |
+| `JWT_SECRET_FILE` | Alternative to `JWT_SECRET`: path to a file holding the secret; one trailing newline is stripped | `/run/secrets/session.key` |
 | `ALLOWED_EMAIL_DOMAINS` | Comma-separated list of allowed email domains for OAuth | `cosmicfrontier.org,contractor.com` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | From secrets manager |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | From secrets manager |
