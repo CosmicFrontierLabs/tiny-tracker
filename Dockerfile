@@ -49,7 +49,8 @@ WORKDIR /app
 
 EXPOSE 8080
 
-# Strip channel_binding=require for diesel CLI (libpq hangs with PgBouncer+channel_binding)
-# The Rust app handles channel_binding fine via tokio-postgres
+# Some connection poolers reject channel_binding=require over libpq, which the
+# diesel CLI uses for migrations; strip it so one URL works with or without a
+# pooler. The Rust app (tokio-postgres) handles it either way.
 CMD DIESEL_URL=$(echo $DATABASE_URL | sed 's/&channel_binding=require//') \
     DATABASE_URL=$DIESEL_URL diesel migration run && action-tracker

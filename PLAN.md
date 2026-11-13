@@ -2,7 +2,7 @@
 
 ## Overview
 
-Web-based action item tracker for Cosmic Frontier, replacing the current spreadsheet-based workflow. Hosted at `tracker.cosmicfrontier.org`.
+Web-based action item tracker for Cosmic Frontier, replacing the current spreadsheet-based workflow. Hosted at a single public URL (`PUBLIC_URL`).
 
 ## Data Model
 
@@ -108,7 +108,7 @@ Status is derived from the `status_history` table - the current status is the mo
 
 - **Frontend:** Yew (Rust WASM framework)
 - **Backend:** Axum (async web framework)
-- **Database:** diesel-async with PostgreSQL (NeonDB)
+- **Database:** diesel-async with PostgreSQL
 - **Architecture:** Single binary serving embedded WASM frontend + API
 
 ### Why This Stack
@@ -116,7 +116,7 @@ Status is derived from the `status_history` table - the current status is the mo
 - Type safety across the entire stack
 - Yew compiles to WASM, embedded in the Axum binary via `rust-embed`
 - `diesel-async` provides compile-time SQL verification with native async support
-- NeonDB gives serverless Postgres with automatic scaling
+- Any PostgreSQL works, managed or self-hosted, so the deployment is one stateless container plus a database
 
 ### Frontend Embedding (rust-embed)
 
@@ -180,7 +180,7 @@ impl TrackerClient {
 - Frontend (Yew): `shared = { path = "../shared", features = ["wasm"] }`
 - Native tools: `shared = { path = "../shared", features = ["native"] }`
 
-## Database Schema (PostgreSQL / NeonDB)
+## Database Schema (PostgreSQL)
 
 ```sql
 -- Trackers represent vendor/partner projects with unique prefixes
@@ -330,11 +330,10 @@ migrations/
 
 ## Deployment
 
-- Docker container in `services/action-tracker/`
 - Multi-stage Dockerfile: build Rust + WASM, then slim runtime image
-- Traefik labels for `tracker.cosmicfrontier.org`
-- Database: NeonDB PostgreSQL (connection string from secrets manager)
-- Add to existing `docker-compose.yml`
+- Runs as one container behind whatever reverse proxy the hosting environment uses
+- Database: PostgreSQL (connection string from the secrets manager)
+- Compose file, proxy routing and secrets live in the deployment repo, not here
 
 ### Docker Health Check
 
@@ -364,10 +363,10 @@ Returns `500` if database connection fails.
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@host/db` |
 | `JWT_SECRET` | Secret key for signing/verifying JWTs (staff sessions and, via a derived key, vendor magic links). Set this or `JWT_SECRET_FILE`, not both. Rotating it invalidates staff sessions and outstanding vendor magic links | Random 32+ byte string |
 | `JWT_SECRET_FILE` | Alternative to `JWT_SECRET`: path to a file holding the secret; one trailing newline is stripped | `/run/secrets/session.key` |
-| `ALLOWED_EMAIL_DOMAINS` | Comma-separated list of allowed email domains for OAuth | `cosmicfrontier.org,contractor.com` |
+| `ALLOWED_EMAIL_DOMAINS` | Comma-separated list of allowed email domains for OAuth | `example.org,contractor.com` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | From secrets manager |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | From secrets manager |
-| `PUBLIC_URL` | Public URL for OAuth callbacks | `https://tracker.cosmicfrontier.org` |
+| `PUBLIC_URL` | Public URL for OAuth callbacks | `https://tracker.example.org` |
 | `PORT` | Server port (optional, default 8080) | `8080` |
 
 ## Authentication
@@ -387,7 +386,7 @@ Uses Google OAuth. The same OAuth client can be shared across multiple services 
 
 ```json
 {
-  "sub": "user@cosmicfrontier.org",
+  "sub": "user@example.org",
   "name": "M. Fitzgerald",
   "user_id": 42,
   "exp": 1234567890,
@@ -475,14 +474,14 @@ Items endpoints support client-side filtering (all data returned, filter in fron
 ### Deep Links (Shareable URLs)
 
 Items can be linked directly by their ID:
-- `https://tracker.cosmicfrontier.org/items/AD-001` → Opens item AD-001 detail view
+- `https://tracker.example.org/items/AD-001` → Opens item AD-001 detail view
 
 The backend also supports a convenience redirect:
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/go/:item_id` | No | Redirects to `/items/:item_id` (for short shareable links) |
 
-Example: `https://tracker.cosmicfrontier.org/go/AD-001` redirects to the item detail page.
+Example: `https://tracker.example.org/go/AD-001` redirects to the item detail page.
 
 If the user is not authenticated, they are redirected to login first, then back to the item.
 
@@ -601,7 +600,7 @@ Minimal admin CLI using the shared native client:
 action-tracker-cli migrate
 
 # Create a user manually (for seeding)
-action-tracker-cli create-user --email "admin@cosmicfrontier.org" --name "Admin" --initials "ADM"
+action-tracker-cli create-user --email "admin@example.org" --name "Admin" --initials "ADM"
 
 # Reset tracker sequence (if IDs get out of sync)
 action-tracker-cli reset-sequence --tracker AD
@@ -720,7 +719,7 @@ jobs:
 
 ## Next Steps
 
-1. Set up NeonDB database and store connection string in secrets manager
+1. Provision a PostgreSQL database and store the connection string in the secrets manager
 2. Initialize Rust workspace with frontend/backend/shared crates
 3. Set up Diesel migrations
 4. Build shared types and client (with feature flags)

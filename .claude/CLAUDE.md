@@ -27,9 +27,9 @@ The Cargo workspace has four members: `backend`, `frontend`, `shared`, `cli`.
 
 - **Frontend**: Yew (Rust → WASM), built with Trunk
 - **Backend**: Axum (async), diesel-async with deadpool connection pool
-- **Database**: PostgreSQL (NeonDB in production, local Docker for dev)
+- **Database**: PostgreSQL (managed or self-hosted in production, local Docker for dev)
 - **Auth**: Google OAuth2 → JWT in HttpOnly cookie (24h expiry)
-- **TLS**: diesel-async uses rustls + tokio-postgres-rustls for NeonDB SSL
+- **TLS**: diesel-async uses rustls + tokio-postgres-rustls, so managed Postgres over TLS works; a plain local Postgres falls back to cleartext
 - **Container**: GHCR (`ghcr.io/cosmicfrontierlabs/tiny-tracker`)
 
 ## Development
@@ -136,8 +136,8 @@ to identify us instead, so a hex container ID risks a `550 5.7.1`.
 
 `JWT_SECRET` or `JWT_SECRET_FILE` (exactly one) supplies the key; see
 `resolve_jwt_secret` in `backend/src/main.rs`. The file form keeps the key out
-of the container environment, so it is absent from `docker inspect` and
-Watchtower does not copy it on recreate. Exactly one trailing newline is
+of the container environment, so it is absent from `docker inspect` and an
+auto-updater does not copy it on recreate. Exactly one trailing newline is
 stripped and nothing else, so moving a value from the env var into a file
 written with `echo` signs identically and logs nobody out. Never log the value
 or its length.
@@ -368,7 +368,7 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 
 ## Deployment
 
-The CI workflow builds a Docker image and pushes to GHCR on merges to main. The image is pulled by the deployment infrastructure (see cf-services repo for docker-compose and Traefik config).
+The CI workflow builds a Docker image and pushes to GHCR on merges to main. How the image is run (compose file, reverse proxy, secrets, auto-updates) is managed outside this repo; this repo stays deployment-agnostic, so keep hostnames, secret-store item names and host details out of it.
 
 The container runs migrations on startup (`diesel migration run && action-tracker`).
 
