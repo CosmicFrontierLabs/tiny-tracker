@@ -1,13 +1,16 @@
+use chrono::{DateTime, Utc};
 use gloo_net::http::Request;
 use shared::{
-    risk_level, risk_score, ActionItemResponse, RiskResponse, RiskStatus, RiskTrend, UpdateRisk,
+    risk_level, risk_score, ActionItemResponse, CreateRiskNote, RiskHistoryField,
+    RiskHistoryResponse, RiskNoteResponse, RiskResponse, RiskStatus, RiskTrend, UpdateRisk,
 };
 use yew::prelude::*;
 use yew_router::prelude::*;
 
 use crate::components::ItemPicker;
 use crate::pages::risk_style::{
-    blank_to_none, event_value, fmt_num, level_class, parse_scale, status_class, trend_class,
+    blank_to_none, event_value, fmt_num, format_datetime, level_class, parse_scale, status_class,
+    trend_class,
 };
 use crate::pages::status_style::status_class as item_status_class;
 use crate::Route;
@@ -38,6 +41,63 @@ struct EditFields {
     status: RiskStatusOrDefault,
     trend: RiskTrendOrDefault,
     opened_on: String,
+    /// Why this edit is being made; recorded with any status or score change.
+    comment: String,
+}
+
+/// One entry of the merged timeline: a note, or every field one edit moved.
+#[derive(Clone, PartialEq)]
+enum TimelineEntry {
+    Note {
+        timestamp: DateTime<Utc>,
+        author: String,
+        content: String,
+    },
+    Change {
+        timestamp: DateTime<Utc>,
+        changed_by: String,
+        /// `(field, old, new)` for each field that moved in this edit.
+        changes: Vec<(RiskHistoryField, Option<String>, Option<String>)>,
+        comment: Option<String>,
+    },
+}
+
+/// Rows from one edit share a `changed_at` and author; fold them into one
+/// event so "sev 4 → 2.5, lik 3 → 1" reads as a single line.
+fn group_history(mut rows: Vec<RiskHistoryResponse>) -> Vec<TimelineEntry> {
+    rows.sort_by_key(|r| (r.changed_at, r.id));
+    let mut out: Vec<TimelineEntry> = Vec::new();
+    for r in rows {
+        if let Some(TimelineEntry::Change {
+            timestamp,
+            changed_by,
+            changes,
+            ..
+        }) = out.last_mut()
+        {
+            if *timestamp == r.changed_at && *changed_by == r.changed_by_name {
+                changes.push((r.field, r.old_value, r.new_value));
+                continue;
+            }
+        }
+        out.push(TimelineEntry::Change {
+            timestamp: r.changed_at,
+            changed_by: r.changed_by_name,
+            changes: vec![(r.field, r.old_value, r.new_value)],
+            comment: r.comment,
+        });
+    }
+    out
+}
+
+fn field_label(f: RiskHistoryField) -> &'static str {
+    match f {
+        RiskHistoryField::Created => "opened",
+        RiskHistoryField::Status => "status",
+        RiskHistoryField::Trend => "trend",
+        RiskHistoryField::Severity => "severity",
+        RiskHistoryField::Likelihood => "likelihood",
+    }
 }
 
 // `RiskStatus` / `RiskTrend` have no `Default`; wrapping keeps `EditFields`
@@ -73,6 +133,7 @@ impl EditFields {
             status: RiskStatusOrDefault(r.status),
             trend: RiskTrendOrDefault(r.trend),
             opened_on: r.opened_on.to_string(),
+            comment: String::new(),
         }
     }
 
@@ -108,6 +169,7 @@ impl EditFields {
             status: Some(self.status.0),
             trend: Some(self.trend.0),
             opened_on: Some(opened_on),
+            comment: blank_to_none(&self.comment),
         })
     }
 }
@@ -150,12 +212,17 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
     let deleting = use_state(|| false);
     let delete_error = use_state(|| None::<String>);
 
+    let timeline = use_state(Vec::<TimelineEntry>::new);
+    let new_note = use_state(String::new);
+    let adding_note = use_state(|| false);
+
     let risk_id = props.risk_id.clone();
 
     {
         let risk = risk.clone();
         let linked_items = linked_items.clone();
         let all_items = all_items.clone();
+        let timeline = timeline.clone();
         let loading = loading.clone();
         let error = error.clone();
         let refresh = *refresh_trigger;
@@ -188,6 +255,36 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
                         all_items.set(data);
                     }
                 }
+
+                // Notes and change history, merged newest-first.
+                let mut entries: Vec<TimelineEntry> = Vec::new();
+                if let Ok(resp) = Request::get(&format!("/api/risks/{}/notes", rid))
+                    .send()
+                    .await
+                {
+                    if let Ok(notes) = resp.json::<Vec<RiskNoteResponse>>().await {
+                        entries.extend(notes.into_iter().map(|n| TimelineEntry::Note {
+                            timestamp: n.created_at,
+                            author: n.author_name,
+                            content: n.content,
+                        }));
+                    }
+                }
+                if let Ok(resp) = Request::get(&format!("/api/risks/{}/history", rid))
+                    .send()
+                    .await
+                {
+                    if let Ok(rows) = resp.json::<Vec<RiskHistoryResponse>>().await {
+                        entries.extend(group_history(rows));
+                    }
+                }
+                entries.sort_by_key(|e| {
+                    std::cmp::Reverse(match e {
+                        TimelineEntry::Note { timestamp, .. } => *timestamp,
+                        TimelineEntry::Change { timestamp, .. } => *timestamp,
+                    })
+                });
+                timeline.set(entries);
 
                 loading.set(false);
             });
@@ -430,6 +527,51 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
         })
     };
 
+    // --- notes -----------------------------------------------------------
+
+    let on_note_input = {
+        let new_note = new_note.clone();
+        Callback::from(move |e: InputEvent| new_note.set(event_value(&e)))
+    };
+
+    let on_add_note = {
+        let new_note = new_note.clone();
+        let adding_note = adding_note.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        let risk_id = risk_id.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            let content = new_note.trim().to_string();
+            if content.is_empty() {
+                return;
+            }
+            let new_note = new_note.clone();
+            let adding_note = adding_note.clone();
+            let refresh_trigger = refresh_trigger.clone();
+            let risk_id = risk_id.clone();
+            adding_note.set(true);
+            wasm_bindgen_futures::spawn_local(async move {
+                let body = CreateRiskNote {
+                    note_date: None,
+                    content,
+                };
+                if let Ok(resp) = Request::post(&format!("/api/risks/{}/notes", risk_id))
+                    .header("Content-Type", "application/json")
+                    .body(serde_json::to_string(&body).unwrap())
+                    .unwrap()
+                    .send()
+                    .await
+                {
+                    if resp.ok() {
+                        new_note.set(String::new());
+                        refresh_trigger.set(*refresh_trigger + 1);
+                    }
+                }
+                adding_note.set(false);
+            });
+        })
+    };
+
     // Already-linked items are hidden from the picker rather than disabled.
     let linked_ids: Vec<String> = linked_items.iter().map(|i| i.id.clone()).collect();
     let can_link_more = all_items.iter().any(|i| !linked_ids.contains(&i.id));
@@ -564,6 +706,12 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
                                             oninput={field_handler(|f, v| f.opened_on = v)} />
                                     </div>
                                 </div>
+                                <div class="form-group">
+                                    <label>{ "Why? (recorded with any status, trend or score change)" }</label>
+                                    <input type="text" value={fields.comment.clone()}
+                                        placeholder="e.g. TVAC data in, conductance within model"
+                                        oninput={field_handler(|f, v| f.comment = v)} />
+                                </div>
                                 <div class="form-actions">
                                     <button type="submit" class="btn btn-primary" disabled={*saving}>
                                         { if *saving { "Saving..." } else { "Save" } }
@@ -668,6 +816,66 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
                                 </div>
                             } else {
                                 <p class="no-updates">{ "Every action item is already linked." }</p>
+                            }
+                        </div>
+
+                        <h3>{ "Activity" }</h3>
+
+                        <form class="add-update-form" onsubmit={on_add_note}>
+                            <textarea
+                                placeholder="Add a note..."
+                                value={(*new_note).clone()}
+                                oninput={on_note_input}
+                                rows="3"
+                            />
+                            <button type="submit" class="btn btn-primary" disabled={*adding_note || new_note.trim().is_empty()}>
+                                { if *adding_note { "Adding..." } else { "Add Note" } }
+                            </button>
+                        </form>
+
+                        <div class="history-scroll">
+                            if timeline.is_empty() {
+                                <p class="no-updates">{ "No activity yet." }</p>
+                            } else {
+                                <ul class="updates-list">
+                                    { for timeline.iter().map(|entry| match entry {
+                                        TimelineEntry::Note { timestamp, author, content } => html! {
+                                            <li class="update-item">
+                                                <div class="update-header">
+                                                    <span class="update-author">{ author }</span>
+                                                    <span class="update-date">{ format_datetime(timestamp) }</span>
+                                                </div>
+                                                <div class="update-content">{ content }</div>
+                                            </li>
+                                        },
+                                        TimelineEntry::Change { timestamp, changed_by, changes, comment } => html! {
+                                            <li class="update-item risk-change-item">
+                                                <div class="update-header">
+                                                    <span class="risk-change-label">{ format!("Changed by {}", changed_by) }</span>
+                                                    <span class="update-date">{ format_datetime(timestamp) }</span>
+                                                </div>
+                                                <div class="risk-change-content">
+                                                    { for changes.iter().map(|(field, old, new)| html! {
+                                                        <span class="risk-change-pill">
+                                                            <strong>{ field_label(*field) }</strong>
+                                                            if let Some(n) = new {
+                                                                { " " }
+                                                                if let Some(o) = old {
+                                                                    <span class="risk-change-old">{ o }</span>
+                                                                    <span class="arrow">{ " → " }</span>
+                                                                }
+                                                                <span class="risk-change-new">{ n }</span>
+                                                            }
+                                                        </span>
+                                                    })}
+                                                    if let Some(c) = comment.as_deref().filter(|c| !c.is_empty()) {
+                                                        <div class="status-comment">{ c }</div>
+                                                    }
+                                                </div>
+                                            </li>
+                                        },
+                                    })}
+                                </ul>
                             }
                         </div>
 

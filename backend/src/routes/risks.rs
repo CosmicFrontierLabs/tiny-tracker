@@ -20,8 +20,9 @@ use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use serde::Deserialize;
 use shared::{
-    risk_level, risk_score, ApiError, CreateRisk, LinkItems, LinkRisk, RiskResponse, RiskStatus,
-    RiskTrend, UpdateRisk as UpdateRiskReq, RISK_SCALE_MAX,
+    format_scale, risk_level, risk_score, ApiError, CreateRisk, LinkItems, LinkRisk,
+    RiskHistoryField, RiskResponse, RiskStatus, RiskTrend, UpdateRisk as UpdateRiskReq,
+    RISK_SCALE_MAX,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -528,6 +529,17 @@ pub async fn create(
         return internal("Risk was created but linking its action items failed");
     }
 
+    // Opens the timeline. Best-effort: a missing first row is a cosmetic
+    // gap, not a reason to report the create as failed.
+    let _ = super::risk_activity::record_history(
+        &mut conn,
+        &risk.id,
+        auth.user_id,
+        &[(RiskHistoryField::Created, None, None)],
+        Some("Risk created".to_string()),
+    )
+    .await;
+
     tracing::info!(
         risk_id = %risk.id,
         user = %auth.email,
@@ -578,6 +590,11 @@ pub async fn update(
     auth: AuthUser,
     Json(payload): Json<UpdateRiskReq>,
 ) -> impl IntoResponse {
+    let comment = match normalize_optional(payload.comment.clone(), "Comment", TEXT_MAX_LEN) {
+        Ok(c) => c,
+        Err(e) => return bad_request(e),
+    };
+
     let validated = (|| -> Result<UpdateRisk, ApiError> {
         if let Some(s) = payload.severity {
             validate_scale(s, "Severity")?;
@@ -620,6 +637,58 @@ pub async fn update(
         Err(resp) => return resp,
     };
 
+    // Read the tracked fields before writing so the history row can say what
+    // they moved from. A deleted risk reads as absent here too.
+    let before: Option<(String, String, f64, f64)> = match risks::table
+        .filter(risks::id.eq(&risk_id))
+        .filter(risks::deleted_at.is_null())
+        .select((
+            risks::status,
+            risks::trend,
+            risks::severity,
+            risks::likelihood,
+        ))
+        .first(&mut conn)
+        .await
+        .optional()
+    {
+        Ok(b) => b,
+        Err(_) => return internal("Failed to fetch risk"),
+    };
+    let Some((old_status, old_trend, old_sev, old_lik)) = before else {
+        return risk_not_found(&risk_id);
+    };
+
+    let mut changes: Vec<(RiskHistoryField, Option<String>, Option<String>)> = Vec::new();
+    if let Some(new) = changeset.status.as_deref().filter(|s| *s != old_status) {
+        changes.push((
+            RiskHistoryField::Status,
+            Some(old_status.clone()),
+            Some(new.to_string()),
+        ));
+    }
+    if let Some(new) = changeset.trend.as_deref().filter(|t| *t != old_trend) {
+        changes.push((
+            RiskHistoryField::Trend,
+            Some(old_trend.clone()),
+            Some(new.to_string()),
+        ));
+    }
+    if let Some(new) = changeset.severity.filter(|s| *s != old_sev) {
+        changes.push((
+            RiskHistoryField::Severity,
+            Some(format_scale(old_sev)),
+            Some(format_scale(new)),
+        ));
+    }
+    if let Some(new) = changeset.likelihood.filter(|l| *l != old_lik) {
+        changes.push((
+            RiskHistoryField::Likelihood,
+            Some(format_scale(old_lik)),
+            Some(format_scale(new)),
+        ));
+    }
+
     // Filtering on deleted_at is what stops an edit resurrecting a deleted
     // risk from a stale tab.
     let updated = diesel::update(
@@ -637,7 +706,27 @@ pub async fn update(
         Err(_) => return internal("Failed to update risk"),
     }
 
-    tracing::info!(risk_id = %risk_id, user = %auth.email, "risk updated");
+    if !changes.is_empty()
+        && super::risk_activity::record_history(
+            &mut conn,
+            &risk_id,
+            auth.user_id,
+            &changes,
+            comment,
+        )
+        .await
+        .is_err()
+    {
+        // The edit itself succeeded; say so, but loudly.
+        tracing::error!(risk_id = %risk_id, "risk updated but history row failed");
+    }
+
+    tracing::info!(
+        risk_id = %risk_id,
+        user = %auth.email,
+        changes = changes.len(),
+        "risk updated"
+    );
 
     match load_risk_response(&mut conn, &risk_id).await {
         Ok(Some(risk)) => Json(risk).into_response(),

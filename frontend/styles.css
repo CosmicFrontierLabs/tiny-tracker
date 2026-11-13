@@ -1837,3 +1837,48 @@ td.risk-score.risk-level-low, span.risk-score.risk-level-low { color: #1e8449; }
 .vendor-rename .error {
     margin-bottom: 0.5rem;
 }
+
+/* Risk change history entries and sidebar risk events */
+.risk-change-item {
+    border-left-color: #8e44ad !important;
+    background: #f9f5fc !important;
+}
+
+.risk-change-label {
+    font-weight: 600;
+    color: #8e44ad;
+}
+
+.risk-change-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.risk-change-pill {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    background: #f0e6f6;
+    color: #4a235a;
+    font-size: 0.85rem;
+}
+
+.risk-change-old {
+    color: #7f8c8d;
+    text-decoration: line-through;
+}
+
+.risk-change-new {
+    font-weight: 600;
+}
+
+.activity-entry.activity-type-risk-note,
+.activity-entry.activity-type-risk-change {
+    border-left: 3px solid #8e44ad;
+}
+
+.activity-risk-id {
+    color: #8e44ad;
+}

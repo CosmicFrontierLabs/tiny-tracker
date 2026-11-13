@@ -295,3 +295,58 @@ pub struct NewActionItemRisk {
     pub risk_id: String,
     pub linked_by_id: i32,
 }
+
+// ============================================================================
+// RiskNote
+// ============================================================================
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = risk_notes)]
+pub struct RiskNote {
+    pub id: i32,
+    pub risk_id: String,
+    pub note_date: NaiveDate,
+    pub author_id: i32,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = risk_notes)]
+pub struct NewRiskNote {
+    pub risk_id: String,
+    pub note_date: NaiveDate,
+    pub author_id: i32,
+    pub content: String,
+}
+
+// ============================================================================
+// RiskHistory
+// ============================================================================
+
+#[derive(Debug, Queryable, Selectable)]
+#[diesel(table_name = risk_history)]
+pub struct RiskHistory {
+    pub id: i32,
+    pub risk_id: String,
+    pub changed_by_id: i32,
+    pub changed_at: DateTime<Utc>,
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub comment: Option<String>,
+}
+
+/// `changed_at` is set explicitly rather than defaulted so every row from
+/// one edit shares the same instant and groups as a single event.
+#[derive(Debug, Insertable)]
+#[diesel(table_name = risk_history)]
+pub struct NewRiskHistory {
+    pub risk_id: String,
+    pub changed_by_id: i32,
+    pub changed_at: DateTime<Utc>,
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub comment: Option<String>,
+}

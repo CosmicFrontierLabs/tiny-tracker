@@ -376,16 +376,31 @@ pub struct StatusHistoryResponse {
 pub enum ActivityEventType {
     NoteAdded,
     StatusChanged,
+    RiskNoteAdded,
+    RiskChanged,
+}
+
+/// Which register an activity entry belongs to. Defaults to `Item` so a
+/// client built before the risk register existed still decodes the feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityTarget {
+    #[default]
+    Item,
+    Risk,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActivityEntry {
     pub timestamp: DateTime<Utc>,
+    /// Item ID or risk ID, depending on `target`.
     pub item_id: String,
     pub item_title: String,
     pub actor_name: String,
     pub event_type: ActivityEventType,
     pub detail: String,
+    #[serde(default)]
+    pub target: ActivityTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -758,6 +773,10 @@ pub struct UpdateRisk {
     pub trend: Option<RiskTrend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opened_on: Option<NaiveDate>,
+    /// Why this change was made. Recorded against every history row the
+    /// update produces (status, trend, severity, likelihood); not a column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// Body of `POST /api/items/:id/risks`.
@@ -771,6 +790,84 @@ pub struct LinkRisk {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkItems {
     pub item_ids: Vec<String>,
+}
+
+/// Format a scale or score value without trailing zeros: `16`, `7.5`, `3.75`.
+/// Used wherever a severity or likelihood is shown or recorded as text.
+pub fn format_scale(v: f64) -> String {
+    let s = format!("{:.2}", v);
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+// ----------------------------------------------------------------------------
+// Risk notes and change history
+// ----------------------------------------------------------------------------
+
+/// Which tracked field a history row records. `Created` opens the timeline
+/// and carries no old or new value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskHistoryField {
+    Created,
+    Status,
+    Trend,
+    Severity,
+    Likelihood,
+}
+
+impl RiskHistoryField {
+    /// The value stored in `risk_history.field`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RiskHistoryField::Created => "created",
+            RiskHistoryField::Status => "status",
+            RiskHistoryField::Trend => "trend",
+            RiskHistoryField::Severity => "severity",
+            RiskHistoryField::Likelihood => "likelihood",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        [
+            RiskHistoryField::Created,
+            RiskHistoryField::Status,
+            RiskHistoryField::Trend,
+            RiskHistoryField::Severity,
+            RiskHistoryField::Likelihood,
+        ]
+        .into_iter()
+        .find(|f| f.as_str() == label.trim())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RiskNoteResponse {
+    pub id: i32,
+    pub risk_id: String,
+    pub note_date: NaiveDate,
+    pub author_id: i32,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateRiskNote {
+    pub note_date: Option<NaiveDate>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RiskHistoryResponse {
+    pub id: i32,
+    pub risk_id: String,
+    pub field: RiskHistoryField,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub changed_by_id: i32,
+    pub changed_by_name: String,
+    pub changed_at: DateTime<Utc>,
+    pub comment: Option<String>,
 }
 
 #[cfg(test)]
@@ -802,6 +899,28 @@ mod risk_tests {
             RiskStatus::from_label(" in work "),
             Some(RiskStatus::InWork)
         );
+    }
+
+    #[test]
+    fn scale_formatting_drops_trailing_zeros() {
+        assert_eq!(format_scale(16.0), "16");
+        assert_eq!(format_scale(7.5), "7.5");
+        assert_eq!(format_scale(3.75), "3.75");
+        assert_eq!(format_scale(0.0), "0");
+    }
+
+    #[test]
+    fn history_fields_round_trip() {
+        for f in [
+            RiskHistoryField::Created,
+            RiskHistoryField::Status,
+            RiskHistoryField::Trend,
+            RiskHistoryField::Severity,
+            RiskHistoryField::Likelihood,
+        ] {
+            assert_eq!(RiskHistoryField::from_label(f.as_str()), Some(f));
+        }
+        assert_eq!(RiskHistoryField::from_label("score"), None);
     }
 
     #[test]
