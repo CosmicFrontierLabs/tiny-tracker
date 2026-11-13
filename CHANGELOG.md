@@ -4,8 +4,8 @@ Notable changes to Tiny Tracker. Newest first.
 
 The project has no release tags; entries are grouped under `Unreleased` until
 one exists. Anything requiring a deployment change — a new environment variable,
-a new secret — belongs here, because the deploy config lives in a different repo
-(`cf-services`) and this file is the handoff.
+a new secret — belongs here, because the deployment configuration lives
+outside this repo and this file is the handoff.
 
 ## Unreleased
 
@@ -14,14 +14,14 @@ a new secret — belongs here, because the deploy config lives in a different re
 - **`JWT_SECRET_FILE`.** The JWT secret can now be read from a file (e.g. a
   read-only bind mount at `/run/secrets/session.key`) instead of the
   `JWT_SECRET` env var, keeping it out of `docker inspect` and out of the
-  environment Watchtower copies. Exactly one trailing `\n` or `\r\n` is
+  environment an auto-updater copies on recreate. Exactly one trailing `\n` or `\r\n` is
   stripped; the rest is used byte-for-byte, so a file holding the current
   `JWT_SECRET` value keeps every staff session and outstanding vendor magic
   link valid. Setting both variables, or pointing at a missing, unreadable,
   empty or non-UTF-8 file, fails startup in every mode. The image has no
   `USER`, so the container runs as root and can read the file at any mode.
 
-  **Deployment change (cf-services):** to switch, write the current value to
+  **Deployment change:** to switch, write the current value to
   the host file, mount it, set `JWT_SECRET_FILE`, and **remove** `JWT_SECRET`
   in the same change — leaving both set stops the container. Rotating the
   secret invalidates all staff sessions and all outstanding vendor magic links.
@@ -98,11 +98,11 @@ a new secret — belongs here, because the deploy config lives in a different re
   adding or removing someone takes effect at their next request (after a
   restart picks up the new value) instead of whenever their 24h token expires.
 
-  **Deployment action:** set this in `cf-services` for the tracker container.
+  **Deployment action:** set this on the tracker container.
   Initial value:
 
   ```
-  ADMIN_EMAILS=matt@cosmicfrontier.org
+  ADMIN_EMAILS=admin@example.org
   ```
 
   Without it, no one can delete items — the feature is simply inert, so this is

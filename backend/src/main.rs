@@ -108,7 +108,7 @@ const DEV_JWT_SECRET: &str = "dev-secret-do-not-use-in-production";
 ///
 /// The file form exists so the key can be bind-mounted read-only instead of
 /// living in the container environment (where `docker inspect` shows it and
-/// Watchtower copies it on every recreate). Exactly one trailing `\n` or
+/// an auto-updater copies it on every recreate). Exactly one trailing `\n` or
 /// `\r\n` is stripped, so a file written with `echo` holds the same key as
 /// the env var did: the result must be byte-identical, or every staff session
 /// and outstanding vendor magic link is invalidated at cutover.
@@ -153,7 +153,8 @@ fn read_jwt_secret_file(path: &std::path::Path) -> Result<String, String> {
 fn establish_connection(
     config: &str,
 ) -> futures_util::future::BoxFuture<'_, diesel::ConnectionResult<AsyncPgConnection>> {
-    // Strip channel_binding=require — PgBouncer (NeonDB pooler) doesn't support it
+    // Some connection poolers reject channel_binding=require; drop it so the
+    // same URL works with or without one in front of the database.
     let config = config.replace("&channel_binding=require", "");
     let fut = async move {
         let rustls_config = rustls::ClientConfig::with_platform_verifier()
@@ -206,7 +207,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Running in DEV MODE - authentication is bypassed!");
     }
 
-    // Database connection with TLS (required for NeonDB)
+    // Database connection with TLS support. Managed Postgres requires it; a
+    // plain local Postgres without TLS falls back to cleartext (sslmode prefer).
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let mut manager_config = ManagerConfig::default();
@@ -383,16 +385,16 @@ mod config_tests {
         // The default for a deployment that has not opted in. Getting this wrong
         // in the permissive direction would hand item deletion to every user.
         let config = config(false, &[]);
-        assert!(!config.is_admin("matt@cosmicfrontier.org"));
+        assert!(!config.is_admin("admin@example.org"));
     }
 
     #[test]
     fn allowlist_matching_ignores_address_case() {
         // Google returns the address in whatever case the profile carries, which
         // need not match how it was typed into the env var.
-        let config = config(false, &["matt@cosmicfrontier.org"]);
-        assert!(config.is_admin("Matt@CosmicFrontier.org"));
-        assert!(!config.is_admin("someone@cosmicfrontier.org"));
+        let config = config(false, &["admin@example.org"]);
+        assert!(config.is_admin("Admin@Example.org"));
+        assert!(!config.is_admin("someone@example.org"));
     }
 
     #[test]

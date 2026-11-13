@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn accepts_bare_domains() {
-        assert!(validate_helo_name("cosmicfrontier.org").is_ok());
-        assert!(validate_helo_name("tracker.cosmicfrontier.org").is_ok());
+        assert!(validate_helo_name("example.org").is_ok());
+        assert!(validate_helo_name("tracker.example.org").is_ok());
     }
 
     #[test]
