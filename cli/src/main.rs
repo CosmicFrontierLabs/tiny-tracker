@@ -99,6 +99,33 @@ mod schema {
     }
 
     diesel::table! {
+        risk_notes (id) {
+            id -> Int4,
+            #[max_length = 20]
+            risk_id -> Varchar,
+            note_date -> Date,
+            author_id -> Int4,
+            content -> Text,
+            created_at -> Timestamptz,
+        }
+    }
+
+    diesel::table! {
+        risk_history (id) {
+            id -> Int4,
+            #[max_length = 20]
+            risk_id -> Varchar,
+            changed_by_id -> Int4,
+            changed_at -> Timestamptz,
+            #[max_length = 20]
+            field -> Varchar,
+            old_value -> Nullable<Text>,
+            new_value -> Nullable<Text>,
+            comment -> Nullable<Text>,
+        }
+    }
+
+    diesel::table! {
         status_history (id) {
             id -> Int4,
             #[max_length = 20]
@@ -127,6 +154,8 @@ mod schema {
         action_items,
         categories,
         notes,
+        risk_history,
+        risk_notes,
         risks,
         status_history,
         users,
@@ -931,6 +960,25 @@ struct NewRisk {
     updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = risk_history)]
+struct NewRiskHistory {
+    risk_id: String,
+    changed_by_id: i32,
+    changed_at: chrono::DateTime<chrono::Utc>,
+    field: String,
+    comment: Option<String>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = risk_notes)]
+struct NewRiskNote {
+    risk_id: String,
+    note_date: NaiveDate,
+    author_id: i32,
+    content: String,
+}
+
 /// One row of the mastersheet. Score and Level are read only to cross-check
 /// against what the tracker will compute; they are never stored.
 #[derive(Debug, serde::Deserialize)]
@@ -970,6 +1018,10 @@ struct RiskCsvRow {
     updated: String,
     #[serde(rename = "Trend", default)]
     trend: String,
+    /// Not in the mastersheet's own columns; add one before exporting to
+    /// carry a remark across as the risk's first note.
+    #[serde(rename = "Notes", default)]
+    notes: String,
 }
 
 /// Parse "R34", "r34" or "34" into 34.
@@ -1040,6 +1092,7 @@ fn opt_text(s: &str) -> Option<String> {
 /// A validated row, ready to insert.
 struct ParsedRisk {
     number: i32,
+    note: Option<String>,
     component: Option<String>,
     category: String,
     title: String,
@@ -1078,6 +1131,7 @@ fn parse_risk_row(row: &RiskCsvRow, today: NaiveDate) -> anyhow::Result<ParsedRi
     };
     Ok(ParsedRisk {
         number,
+        note: opt_text(&row.notes),
         component: opt_text(&row.item),
         category,
         title,
@@ -1293,7 +1347,40 @@ fn import_risks_csv(
                 .values(&new_risk)
                 .execute(conn)?;
 
-            println!("  IMPORTED {} - {}", id, p.title);
+            // The timeline opens on the sheet's Opened date, not the import
+            // time, so history reads as the register was actually kept.
+            let opened_at = p
+                .opened_on
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight exists")
+                .and_utc();
+            diesel::insert_into(risk_history::table)
+                .values(&NewRiskHistory {
+                    risk_id: id.clone(),
+                    changed_by_id: creator.id,
+                    changed_at: opened_at,
+                    field: "created".to_string(),
+                    comment: Some("Imported from CSV".to_string()),
+                })
+                .execute(conn)?;
+
+            if let Some(note) = &p.note {
+                diesel::insert_into(risk_notes::table)
+                    .values(&NewRiskNote {
+                        risk_id: id.clone(),
+                        note_date: p.updated_on,
+                        author_id: creator.id,
+                        content: note.clone(),
+                    })
+                    .execute(conn)?;
+            }
+
+            println!(
+                "  IMPORTED {} - {}{}",
+                id,
+                p.title,
+                if p.note.is_some() { " (+1 note)" } else { "" }
+            );
             imported += 1;
         }
 

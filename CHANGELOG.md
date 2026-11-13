@@ -36,6 +36,14 @@ a new secret — belongs here, because the deploy config lives in a different re
 
   No new environment variables.
 
+- **Risk notes and change history.** Each risk now has the same two
+  timelines as an action item: free-text notes, and a record of who changed
+  its status, trend, severity or likelihood, when, from what to what, and
+  why (an optional reason on the edit form). The risk modal shows them merged
+  as an activity feed, and the home page sidebar includes risk events. The
+  importer opens each risk's history on its Opened date and accepts an
+  optional `Notes` column as the first note.
+
 - **Vendor prefix rename.** The prefix is editable from Manage Vendors. A
   rename rewrites every action item ID for that vendor (`AD-001` becomes
   `NEW-001`) together with its notes, status history and risk links, in one
@@ -86,6 +94,10 @@ a new secret — belongs here, because the deploy config lives in a different re
   a safe variable to add after the image ships rather than before.
 
 ### Database
+
+- Migration `2026-11-12-000015_risk_activity` adds `risk_notes` and
+  `risk_history`, and backfills a `created` history row for every existing
+  risk. Additive.
 
 - Migration `2026-11-12-000014_vendor_prefix_rename` re-declares the three
   foreign keys onto `action_items` with `ON UPDATE CASCADE`. No data changes.

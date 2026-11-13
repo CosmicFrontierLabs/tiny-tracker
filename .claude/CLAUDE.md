@@ -233,6 +233,23 @@ refuses numbers already used by another vendor's risks, advances the sequence
 past the highest imported number, and warns when the sheet's Level disagrees
 with the computed one.
 
+### Risks have two timelines, like items
+
+`risk_notes` is free-text discussion. `risk_history` records who moved a
+risk's status, trend, severity or likelihood, when, from what to what, and
+why: one row per field, rows from one edit sharing a `changed_at`, and a
+`created` row opening every timeline (backfilled by the migration for risks
+that predate it). `PATCH /api/risks/:id` compares the tracked fields before
+writing and records only what actually moved, with the optional `comment`
+from the request attached to each row. The importer opens each risk's
+history on the sheet's Opened date and turns an optional `Notes` column into
+the first note.
+
+This is what makes trend checkable: without the history, a trend is only an
+assertion. Both feed into `/api/activity` alongside item events, tagged with
+`target: risk` so the sidebar navigates to the register. Both tables are
+staff-only, same as risks.
+
 ### Renaming a vendor prefix rewrites its item IDs
 
 An action item's user-facing ID (`AD-001`) is also its primary key, and
@@ -294,6 +311,8 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET/PATCH/DELETE | `/api/risks/:id` | Get / update / soft-delete risk (delete is admin-only) |
 | GET/POST | `/api/risks/:id/items` | Live action items linked to a risk / link several (`{"item_ids":[...]}`) |
 | GET/POST | `/api/items/:id/risks` | Risks linked to an item / link one (`{"risk_id"}`) |
+| GET/POST | `/api/risks/:id/notes` | List / add notes on a risk |
+| GET | `/api/risks/:id/history` | Who changed status, trend, severity or likelihood, and why |
 | DELETE | `/api/items/:id/risks/:risk_id` | Unlink |
 | GET/POST | `/api/vendors/:id/allowed-domains` | List / add portal email domains |
 | DELETE | `/api/vendors/:id/allowed-domains/:domain_id` | Revoke a portal domain |

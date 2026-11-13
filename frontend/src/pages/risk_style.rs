@@ -33,8 +33,28 @@ pub fn trend_class(trend: RiskTrend) -> &'static str {
 
 /// Format a score or scale value without trailing zeros: `16`, `7.5`, `3.75`.
 pub fn fmt_num(v: f64) -> String {
-    let s = format!("{:.2}", v);
-    s.trim_end_matches('0').trim_end_matches('.').to_string()
+    shared::format_scale(v)
+}
+
+/// Locale-aware date and time in the viewer's timezone.
+pub fn format_datetime(dt: &chrono::DateTime<chrono::Utc>) -> String {
+    let js_date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
+        dt.timestamp_millis() as f64
+    ));
+    let options = js_sys::Object::new();
+    for (k, v) in [
+        ("year", "numeric"),
+        ("month", "short"),
+        ("day", "numeric"),
+        ("hour", "2-digit"),
+        ("minute", "2-digit"),
+    ] {
+        let _ = js_sys::Reflect::set(&options, &k.into(), &v.into());
+    }
+    js_date
+        .to_locale_string("default", &options)
+        .as_string()
+        .unwrap_or_else(|| dt.format("%b %d, %Y %H:%M").to_string())
 }
 
 /// Read `.value` off whatever element raised the event: input, textarea or

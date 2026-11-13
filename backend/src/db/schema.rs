@@ -59,6 +59,33 @@ diesel::table! {
 }
 
 diesel::table! {
+    risk_history (id) {
+        id -> Int4,
+        #[max_length = 20]
+        risk_id -> Varchar,
+        changed_by_id -> Int4,
+        changed_at -> Timestamptz,
+        #[max_length = 20]
+        field -> Varchar,
+        old_value -> Nullable<Text>,
+        new_value -> Nullable<Text>,
+        comment -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    risk_notes (id) {
+        id -> Int4,
+        #[max_length = 20]
+        risk_id -> Varchar,
+        note_date -> Date,
+        author_id -> Int4,
+        content -> Text,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     risks (id) {
         #[max_length = 20]
         id -> Varchar,
@@ -163,6 +190,10 @@ diesel::joinable!(action_items -> vendors (vendor_id));
 diesel::joinable!(categories -> vendors (vendor_id));
 diesel::joinable!(notes -> action_items (action_item_id));
 diesel::joinable!(notes -> users (author_id));
+diesel::joinable!(risk_history -> risks (risk_id));
+diesel::joinable!(risk_history -> users (changed_by_id));
+diesel::joinable!(risk_notes -> risks (risk_id));
+diesel::joinable!(risk_notes -> users (author_id));
 diesel::joinable!(risks -> vendors (vendor_id));
 diesel::joinable!(status_history -> action_items (action_item_id));
 diesel::joinable!(status_history -> users (changed_by_id));
@@ -174,6 +205,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     action_items,
     categories,
     notes,
+    risk_history,
+    risk_notes,
     risks,
     status_history,
     users,

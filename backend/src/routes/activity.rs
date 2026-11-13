@@ -14,7 +14,7 @@ use diesel::prelude::*;
 use diesel::sql_types::{Timestamptz, Varchar};
 use diesel_async::RunQueryDsl;
 use serde::Deserialize;
-use shared::{ActivityEntry, ActivityEventType, ApiError};
+use shared::{ActivityEntry, ActivityEventType, ActivityTarget, ApiError};
 use std::sync::Arc;
 
 use super::AuthUser;
@@ -40,6 +40,8 @@ struct RawActivityRow {
     event_type: String,
     #[diesel(sql_type = Varchar)]
     detail: String,
+    #[diesel(sql_type = Varchar)]
+    target: String,
 }
 
 pub async fn activity(
@@ -69,7 +71,8 @@ pub async fn activity(
                 ai.title AS item_title,
                 u.name AS actor_name,
                 'note_added' AS event_type,
-                LEFT(n.content, 120) AS detail
+                LEFT(n.content, 120) AS detail,
+                'item' AS target
             FROM notes n
             INNER JOIN users u ON u.id = n.author_id
             INNER JOIN action_items ai ON ai.id = n.action_item_id
@@ -85,13 +88,48 @@ pub async fn activity(
                 ai.title AS item_title,
                 u.name AS actor_name,
                 'status_changed' AS event_type,
-                sh.status AS detail
+                sh.status AS detail,
+                'item' AS target
             FROM status_history sh
             INNER JOIN users u ON u.id = sh.changed_by_id
             INNER JOIN action_items ai ON ai.id = sh.action_item_id
             WHERE sh.changed_by_id != $1
               AND sh.changed_at > $2
               AND ai.deleted_at IS NULL
+        )
+        UNION ALL
+        (
+            SELECT
+                rn.created_at AS timestamp,
+                rn.risk_id AS item_id,
+                r.title AS item_title,
+                u.name AS actor_name,
+                'risk_note_added' AS event_type,
+                LEFT(rn.content, 120) AS detail,
+                'risk' AS target
+            FROM risk_notes rn
+            INNER JOIN users u ON u.id = rn.author_id
+            INNER JOIN risks r ON r.id = rn.risk_id
+            WHERE rn.author_id != $1
+              AND rn.created_at > $2
+              AND r.deleted_at IS NULL
+        )
+        UNION ALL
+        (
+            SELECT
+                rh.changed_at AS timestamp,
+                rh.risk_id AS item_id,
+                r.title AS item_title,
+                u.name AS actor_name,
+                'risk_changed' AS event_type,
+                rh.field || '|' || COALESCE(rh.old_value, '') || '|' || COALESCE(rh.new_value, '') AS detail,
+                'risk' AS target
+            FROM risk_history rh
+            INNER JOIN users u ON u.id = rh.changed_by_id
+            INNER JOIN risks r ON r.id = rh.risk_id
+            WHERE rh.changed_by_id != $1
+              AND rh.changed_at > $2
+              AND r.deleted_at IS NULL
         )
         ORDER BY timestamp DESC
         LIMIT $3
@@ -120,11 +158,18 @@ pub async fn activity(
         .map(|row| {
             let event_type = match row.event_type.as_str() {
                 "status_changed" => ActivityEventType::StatusChanged,
+                "risk_note_added" => ActivityEventType::RiskNoteAdded,
+                "risk_changed" => ActivityEventType::RiskChanged,
                 _ => ActivityEventType::NoteAdded,
+            };
+            let target = match row.target.as_str() {
+                "risk" => ActivityTarget::Risk,
+                _ => ActivityTarget::Item,
             };
             let detail = match &event_type {
                 ActivityEventType::StatusChanged => format!("→ {}", row.detail),
-                ActivityEventType::NoteAdded => {
+                ActivityEventType::RiskChanged => describe_risk_change(&row.detail),
+                ActivityEventType::NoteAdded | ActivityEventType::RiskNoteAdded => {
                     if row.detail.len() >= 120 {
                         format!("{}...", row.detail)
                     } else {
@@ -139,9 +184,41 @@ pub async fn activity(
                 actor_name: row.actor_name,
                 event_type,
                 detail,
+                target,
             }
         })
         .collect();
 
     Json(entries).into_response()
+}
+
+/// Turn the `field|old|new` encoding from the risk_history branch of the
+/// UNION into a one-line description: "severity 4 → 2.5", or "opened".
+fn describe_risk_change(encoded: &str) -> String {
+    let mut parts = encoded.splitn(3, '|');
+    let field = parts.next().unwrap_or("");
+    let old = parts.next().unwrap_or("");
+    let new = parts.next().unwrap_or("");
+    match field {
+        "created" => "opened".to_string(),
+        _ if old.is_empty() => format!("{field} → {new}"),
+        _ => format!("{field} {old} → {new}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_risk_change;
+
+    #[test]
+    fn risk_changes_read_as_one_line() {
+        assert_eq!(describe_risk_change("severity|4|2.5"), "severity 4 → 2.5");
+        assert_eq!(
+            describe_risk_change("status|Open|In work"),
+            "status Open → In work"
+        );
+        assert_eq!(describe_risk_change("created||"), "opened");
+        // A value containing the separator is cut, never panicked on.
+        assert_eq!(describe_risk_change("trend|a|b|c"), "trend a → b|c");
+    }
 }

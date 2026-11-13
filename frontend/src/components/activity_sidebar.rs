@@ -2,9 +2,12 @@ use chrono::{DateTime, Utc};
 use gloo_net::http::Request;
 use gloo_storage::{LocalStorage, Storage};
 use js_sys::{Date, Object, Reflect};
-use shared::{ActivityEntry, ActivityEventType};
+use shared::{ActivityEntry, ActivityEventType, ActivityTarget};
 use wasm_bindgen::JsValue;
 use yew::prelude::*;
+use yew_router::prelude::*;
+
+use crate::Route;
 
 const STORAGE_KEY: &str = "activity_last_viewed";
 
@@ -32,6 +35,9 @@ pub struct ActivitySidebarProps {
 pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
     let entries = use_state(Vec::<ActivityEntry>::new);
     let loading = use_state(|| true);
+    // Item entries open the item modal in place; risk entries live on the
+    // other page, so they navigate.
+    let navigator = use_navigator();
 
     {
         let entries = entries.clone();
@@ -96,28 +102,39 @@ pub fn activity_sidebar(props: &ActivitySidebarProps) -> Html {
             <ul class="activity-list">
                 { for entries.iter().map(|entry| {
                     let item_id = entry.item_id.clone();
+                    let is_risk = entry.target == ActivityTarget::Risk;
                     let on_click = {
                         let on_select = props.on_select_item.clone();
+                        let navigator = navigator.clone();
                         let id = item_id.clone();
                         Callback::from(move |_: MouseEvent| {
-                            on_select.emit(id.clone());
+                            if is_risk {
+                                if let Some(nav) = &navigator {
+                                    nav.push(&Route::Risk { id: id.clone() });
+                                }
+                            } else {
+                                on_select.emit(id.clone());
+                            }
                         })
                     };
 
                     let type_class = match entry.event_type {
                         ActivityEventType::NoteAdded => "activity-type-note",
                         ActivityEventType::StatusChanged => "activity-type-status",
+                        ActivityEventType::RiskNoteAdded => "activity-type-risk-note",
+                        ActivityEventType::RiskChanged => "activity-type-risk-change",
                     };
 
                     let type_label = match entry.event_type {
-                        ActivityEventType::NoteAdded => "added a note",
+                        ActivityEventType::NoteAdded | ActivityEventType::RiskNoteAdded => "added a note",
                         ActivityEventType::StatusChanged => "changed status",
+                        ActivityEventType::RiskChanged => "changed risk",
                     };
 
                     html! {
                         <li class={classes!("activity-entry", type_class)} onclick={on_click}>
                             <div class="activity-entry-header">
-                                <span class="activity-item-id">{ &entry.item_id }</span>
+                                <span class={classes!("activity-item-id", is_risk.then_some("activity-risk-id"))}>{ &entry.item_id }</span>
                                 <span class="activity-time">{ format_relative_time(&entry.timestamp) }</span>
                             </div>
                             <div class="activity-actor">
