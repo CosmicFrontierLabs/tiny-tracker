@@ -157,6 +157,129 @@ pub struct AuthUser {
 /// admin-only — there is no in-handler check to forget.
 pub struct AdminUser(pub AuthUser);
 
+fn unauthorized(message: &str) -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(ApiError::unauthorized(message)),
+    )
+        .into_response()
+}
+
+#[allow(clippy::result_large_err)] // see note on `get_conn`
+/// Validate a staff JWT and turn it into an `AuthUser`.
+///
+/// `from_cookie` controls whether a failure also clears the browser cookie:
+/// right for a stale session cookie, wrong for a bearer header, where there
+/// is no cookie to clear and the client is not a browser.
+fn staff_from_jwt(state: &AppState, token: &str, from_cookie: bool) -> Result<AuthUser, Response> {
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(state.config.jwt_secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|_| {
+        if from_cookie {
+            (
+                StatusCode::UNAUTHORIZED,
+                [(header::SET_COOKIE, CLEAR_TOKEN_COOKIE)],
+                Json(ApiError::unauthorized("Invalid or expired token")),
+            )
+                .into_response()
+        } else {
+            unauthorized("Invalid or expired token")
+        }
+    })?;
+
+    // A vendor portal token must never satisfy a staff route, even if it
+    // somehow validates against the staff key.
+    if token_data.claims.scope != TokenScope::Staff {
+        return Err(unauthorized("Token is not valid for this API"));
+    }
+
+    let is_admin = state.config.is_admin(&token_data.claims.sub);
+
+    Ok(AuthUser {
+        user_id: token_data.claims.user_id,
+        email: token_data.claims.sub,
+        name: token_data.claims.name,
+        is_admin,
+    })
+}
+
+#[allow(clippy::result_large_err)] // see note on `get_conn`
+/// The identity behind a matched service token.
+///
+/// The user row is looked up on every request, like the vendor portal does,
+/// so the attributed name is whatever the row currently says. A missing row
+/// is created with the email's local part as its name; to choose the display
+/// name, create the user first (`action-tracker-cli create-user`).
+async fn service_user(state: &AppState, email: &str) -> Result<AuthUser, Response> {
+    use crate::db::schema::users;
+    use crate::models::{NewUser, User};
+
+    diesel::define_sql_function! { fn lower(x: diesel::sql_types::Text) -> diesel::sql_types::Text; }
+
+    let mut conn = get_conn(state).await?;
+
+    // Case-insensitive, because a row Google created may carry the address
+    // in whatever case the profile had, and `users.email` is unique: missing
+    // it here would make the insert below fail rather than reuse the row.
+    let existing: Option<User> = users::table
+        .filter(lower(users::email).eq(email))
+        .first(&mut conn)
+        .await
+        .optional()
+        .map_err(|e| {
+            tracing::error!("Failed to look up service user: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError::internal_error("Database error")),
+            )
+                .into_response()
+        })?;
+
+    let user = match existing {
+        Some(user) => user,
+        None => {
+            let local = email.split('@').next().unwrap_or(email);
+            let initials: String = local
+                .split(['.', '-', '_', '+'])
+                .filter_map(|w| w.chars().next())
+                .take(2)
+                .collect::<String>()
+                .to_uppercase();
+            let new_user = NewUser {
+                email: email.to_string(),
+                name: local.to_string(),
+                initials: Some(initials),
+            };
+            let user: User = diesel::insert_into(users::table)
+                .values(&new_user)
+                .returning(User::as_returning())
+                .get_result(&mut conn)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to create service user: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ApiError::internal_error("Database error")),
+                    )
+                        .into_response()
+                })?;
+            tracing::info!(email = %email, id = user.id, "created user for API token");
+            user
+        }
+    };
+
+    let is_admin = state.config.is_admin(&user.email);
+    Ok(AuthUser {
+        user_id: user.id,
+        email: user.email,
+        name: user.name,
+        is_admin,
+    })
+}
+
 #[axum::async_trait]
 impl FromRequestParts<Arc<AppState>> for AuthUser {
     type Rejection = Response;
@@ -165,96 +288,50 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         parts: &mut Parts,
         state: &Arc<AppState>,
     ) -> Result<Self, Self::Rejection> {
+        // An explicit credential is always checked, dev mode included: a
+        // presented bearer must prove something, or a misconfigured token
+        // would be masked locally and only fail in production. Service tokens
+        // are tried first; anything else in the header is taken as a staff
+        // JWT, which is how a script holding a session token calls the API.
+        let bearer = parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|t| !t.is_empty());
+
+        if let Some(token) = bearer {
+            if let Some(email) = state.config.api_tokens.lookup(token) {
+                return service_user(state, email).await;
+            }
+            return staff_from_jwt(state, token, false);
+        }
+
         // Dev mode bypass
         if state.config.dev_mode {
             let email = "dev@localhost".to_string();
             let is_admin = state.config.is_admin(&email);
-            if let Some(dev_user_id) = state.config.dev_user_id {
-                return Ok(AuthUser {
-                    user_id: dev_user_id,
-                    email,
-                    name: "Dev User".to_string(),
-                    is_admin,
-                });
-            }
-            // Default dev user
             return Ok(AuthUser {
-                user_id: 1,
+                user_id: state.config.dev_user_id.unwrap_or(1),
                 email,
                 name: "Dev User".to_string(),
                 is_admin,
             });
         }
 
-        // Try to get token from cookie
         let cookie_header = parts
             .headers
-            .get(axum::http::header::COOKIE)
+            .get(header::COOKIE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
 
         let token = cookie_header
             .split(';')
-            .find_map(|cookie| {
-                let cookie = cookie.trim();
-                if cookie.starts_with("token=") {
-                    Some(cookie.trim_start_matches("token="))
-                } else {
-                    None
-                }
-            })
-            .or_else(|| {
-                // Fallback to Authorization header
-                parts
-                    .headers
-                    .get(axum::http::header::AUTHORIZATION)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.strip_prefix("Bearer "))
-            });
+            .find_map(|cookie| cookie.trim().strip_prefix("token="))
+            .ok_or_else(|| unauthorized("Missing authentication token"))?;
 
-        let token = match token {
-            Some(t) => t,
-            None => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    Json(ApiError::unauthorized("Missing authentication token")),
-                )
-                    .into_response())
-            }
-        };
-
-        let token_data = decode::<Claims>(
-            token,
-            &DecodingKey::from_secret(state.config.jwt_secret.as_bytes()),
-            &Validation::default(),
-        )
-        .map_err(|_| {
-            (
-                StatusCode::UNAUTHORIZED,
-                [(header::SET_COOKIE, CLEAR_TOKEN_COOKIE)],
-                Json(ApiError::unauthorized("Invalid or expired token")),
-            )
-                .into_response()
-        })?;
-
-        // A vendor portal token must never satisfy a staff route, even if it
-        // somehow validates against the staff key.
-        if token_data.claims.scope != TokenScope::Staff {
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                Json(ApiError::unauthorized("Token is not valid for this API")),
-            )
-                .into_response());
-        }
-
-        let is_admin = state.config.is_admin(&token_data.claims.sub);
-
-        Ok(AuthUser {
-            user_id: token_data.claims.user_id,
-            email: token_data.claims.sub,
-            name: token_data.claims.name,
-            is_admin,
-        })
+        staff_from_jwt(state, token, true)
     }
 }
 

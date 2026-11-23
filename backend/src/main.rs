@@ -1,3 +1,4 @@
+mod api_tokens;
 mod db;
 mod mail;
 mod models;
@@ -45,6 +46,8 @@ pub struct AppConfig {
     pub allowed_email_domains: Vec<String>,
     /// Lower-cased emails allowed to perform destructive admin actions.
     pub admin_emails: Vec<String>,
+    /// Static bearer tokens for scripts and agents. See [`api_tokens`].
+    pub api_tokens: api_tokens::ApiTokens,
     pub mail: mail::MailConfig,
 }
 
@@ -81,6 +84,13 @@ impl AppConfig {
                 .map(|s| s.trim().to_lowercase())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            api_tokens: api_tokens::ApiTokens::resolve(
+                std::env::var("API_TOKENS").ok(),
+                std::env::var_os("API_TOKENS_FILE")
+                    .map(std::path::PathBuf::from)
+                    .as_deref(),
+            )
+            .unwrap_or_else(|e| panic!("{e}")),
             mail: mail::MailConfig::from_env(dev_mode),
         }
     }
@@ -205,6 +215,16 @@ async fn main() -> anyhow::Result<()> {
 
     if config.dev_mode {
         tracing::warn!("Running in DEV MODE - authentication is bypassed!");
+    }
+
+    if config.api_tokens.is_empty() {
+        tracing::info!("No API tokens configured; bearer service access is disabled");
+    } else {
+        tracing::info!(
+            count = config.api_tokens.len(),
+            identities = ?config.api_tokens.emails(),
+            "API tokens configured"
+        );
     }
 
     // Database connection with TLS support. Managed Postgres requires it; a
@@ -376,6 +396,7 @@ mod config_tests {
             google_client_secret: None,
             allowed_email_domains: Vec::new(),
             admin_emails: admin_emails.iter().map(|e| e.to_string()).collect(),
+            api_tokens: crate::api_tokens::ApiTokens::default(),
             mail: crate::mail::MailConfig::from_env(true),
         }
     }

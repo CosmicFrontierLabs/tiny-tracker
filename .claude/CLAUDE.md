@@ -9,7 +9,7 @@ tiny-tracker/
 ├── backend/         # Axum web server + API
 ├── frontend/        # Yew WASM SPA
 ├── shared/          # API types shared between frontend & backend
-├── cli/             # Admin CLI (user/vendor management)
+├── cli/             # CLI: HTTP client for day-to-day work, direct DB for admin tasks
 ├── migrations/      # Diesel SQL migrations
 ├── Dockerfile       # Multi-stage build (frontend WASM → backend binary → slim runtime)
 └── .github/workflows/ci.yml  # Build + push to GHCR on main
@@ -60,6 +60,10 @@ Dev mode (`DEV_MODE=true`) bypasses OAuth and uses a local dev user.
 2. If 401 → show login page with "Sign in with Google" link to `/auth/login`
 3. `/auth/login` → Google OAuth → `/auth/callback` → creates/finds user in DB → sets JWT cookie → redirects to `/`
 4. All `/api/*` routes extract `AuthUser` from JWT cookie via `FromRequestParts`
+5. A request with `Authorization: Bearer <secret>` is checked against
+   `API_TOKENS` first (see below), then as a staff JWT. A bearer header is
+   checked even in dev mode; the dev bypass only applies to requests that
+   present no credential.
 
 ### Status is derived from history
 Action items don't have a `status` column. Current status = most recent entry in `status_history` table. All transitions are logged.
@@ -162,6 +166,51 @@ can hide the control; the server never trusts it.
 
 An empty or unset `ADMIN_EMAILS` admits nobody. Dev mode grants admin
 unconditionally, since it already bypasses authentication entirely.
+
+### API tokens are a bearer credential bound to a user
+
+Scripts and agents cannot complete an OAuth redirect and should not hold a
+24h session cookie. `API_TOKENS` (or `API_TOKENS_FILE`, at most one) lists
+`email=secret` pairs; see `backend/src/api_tokens.rs`. A request bearing a
+listed secret acts as that email's user through the ordinary `AuthUser`
+extractor, so every handler rule applies unchanged and every write is
+attributed to the service identity. The user row is created on first use
+with the email's local part as its name; create it beforehand with
+`create-user` to pick the display name.
+
+Secrets are compared in constant time, must be at least 32 characters, must
+not repeat across entries, and are never logged (startup logs only the
+emails). One email may hold several secrets so a token can be rotated without
+a gap. Admin rights are **not** a property of the token: they come from
+`ADMIN_EMAILS` like everyone else's, so a token's reach can change without
+reissuing it. An empty or unset list disables the bearer path entirely.
+
+### The CLI talks HTTP for day-to-day work and SQL only for admin tasks
+
+`action-tracker-cli` has two halves. `whoami`, `vendors`, `users`,
+`categories`, `items`, `risks` and `activity` call `/api/*` with a token
+(`TRACKER_URL` plus `TRACKER_TOKEN` or `TRACKER_TOKEN_FILE`; `--json` for
+machine output). They use the `shared` request and response structs, so an
+API change the CLI does not follow is a compile error. The flat admin
+commands (`create-user`, `restore-item`, `import-risks-csv`, ...) open
+`DATABASE_URL` directly, because restoring a soft-deleted row is deliberately
+not an API operation.
+
+**Do not add write paths to the database half.** Status is a history row,
+risk edits are recorded per field, deleted rows must stay hidden; those rules
+live in the route handlers and the HTTP half inherits them for free. The
+binary ships in the container image, so the same tool works from inside it.
+
+```bash
+export TRACKER_URL=https://tracker.example.org TRACKER_TOKEN_FILE=/run/secrets/agent-token
+action-tracker-cli whoami
+action-tracker-cli items create --vendor NEU --title "Re-run TVAC" --category Thermal --priority high
+action-tracker-cli items status NEU-012 in_progress --comment "Started"
+action-tracker-cli items note NEU-012 - < notes.md
+action-tracker-cli risks update RISK-034 --likelihood 2 --trend improving --comment "Bench test passed"
+action-tracker-cli risks link RISK-034 NEU-012
+action-tracker-cli items list --vendor NEU --status "In Progress" --json
+```
 
 ### Deleting an item is a soft delete
 
@@ -357,6 +406,8 @@ Read-only, magic-link authenticated. Not under `/api/*` and never accept a staff
 | `PORT` | No | Server port (default: 8080) |
 | `ALLOWED_EMAIL_DOMAINS` | No | Comma-separated allowed domains |
 | `ADMIN_EMAILS` | No | Comma-separated emails allowed to delete items. Empty = nobody |
+| `API_TOKENS` | No | Comma-separated `email=secret` bearer tokens for scripts and agents. Secrets ≥ 32 chars. Empty = bearer path disabled. Set this **or** `API_TOKENS_FILE`, never both |
+| `API_TOKENS_FILE` | Alt. to `API_TOKENS` | Path to a file with one `email=secret` per line; blank lines and `#` comments ignored. A missing or unreadable file fails startup |
 | `DEV_MODE` | No | Set to `true` to bypass OAuth |
 | `DEV_USER_ID` | No | User ID for dev mode |
 | `MAIL_BACKEND` | No | `smtp` \| `resend` \| `log` (default `log` in dev, else `smtp`) |

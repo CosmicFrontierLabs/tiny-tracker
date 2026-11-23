@@ -15,10 +15,18 @@ diesel = { version = "2", features = ["postgres", "chrono"] }
 dotenvy = "0.15"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
+
+# HTTP (commands that talk to a running server)
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "json",
+    "rustls-tls",
+] }
 
 # Serialization
 serde = { workspace = true }
+serde_json = { workspace = true }
 chrono = { workspace = true }
 
 # CSV

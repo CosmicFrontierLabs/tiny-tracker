@@ -7,6 +7,8 @@ use clap::{Parser, Subcommand};
 use diesel::prelude::*;
 use diesel::PgConnection;
 
+mod api;
+
 mod schema {
     diesel::table! {
         users (id) {
@@ -171,14 +173,53 @@ use schema::*;
 
 #[derive(Parser)]
 #[command(name = "action-tracker-cli")]
-#[command(about = "Admin CLI for Action Tracker")]
+#[command(about = "CLI for Action Tracker")]
+#[command(long_about = "CLI for Action Tracker.
+
+Day-to-day commands (whoami, vendors, users, categories, items, risks,
+activity) talk to a running server over HTTP and need TRACKER_URL plus a
+bearer token in TRACKER_TOKEN or TRACKER_TOKEN_FILE (issued via the server's
+API_TOKENS). Every write goes through the same API the web UI uses, so the
+same rules apply and the same user is recorded.
+
+Admin commands (create-user, create-vendor, list-*, restore-*, import-*)
+open the database directly and need DATABASE_URL.")]
 struct Cli {
+    #[command(flatten)]
+    connection: api::Connection,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Show who the server thinks you are (checks URL and token)
+    Whoami,
+    /// Vendors, over the API
+    #[command(subcommand)]
+    Vendors(api::VendorsCmd),
+    /// Users, over the API
+    #[command(subcommand)]
+    Users(api::UsersCmd),
+    /// Per-vendor item categories, over the API
+    #[command(subcommand)]
+    Categories(api::CategoriesCmd),
+    /// Action items: list, create, update, status, notes, links
+    #[command(subcommand)]
+    Items(api::ItemsCmd),
+    /// Risk register: list, create, update, notes, links
+    #[command(subcommand)]
+    Risks(api::RisksCmd),
+    /// Recent notes and status changes across items and risks
+    Activity {
+        /// Only events after this RFC 3339 timestamp
+        #[arg(long)]
+        since: Option<String>,
+        /// Max entries (server caps at 200)
+        #[arg(long)]
+        limit: Option<i64>,
+    },
     /// Create a new user
     CreateUser {
         #[arg(long)]
@@ -1417,10 +1458,41 @@ pub(crate) fn establish_connection() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    // One line on stderr and a non-zero exit, with no backtrace: the message
+    // from the server (or the local validation) is the whole story.
+    if let Err(e) = run() {
+        eprintln!("Error: {e:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Whoami => {
+            api::whoami(&api::Client::connect(&cli.connection)?)?;
+        }
+        Commands::Vendors(cmd) => {
+            api::vendors(&api::Client::connect(&cli.connection)?, cmd)?;
+        }
+        Commands::Users(cmd) => {
+            api::users(&api::Client::connect(&cli.connection)?, cmd)?;
+        }
+        Commands::Categories(cmd) => {
+            api::categories(&api::Client::connect(&cli.connection)?, cmd)?;
+        }
+        Commands::Items(cmd) => {
+            api::items(&api::Client::connect(&cli.connection)?, cmd)?;
+        }
+        Commands::Risks(cmd) => {
+            api::risks(&api::Client::connect(&cli.connection)?, cmd)?;
+        }
+        Commands::Activity { since, limit } => {
+            api::activity(&api::Client::connect(&cli.connection)?, since, limit)?;
+        }
+
         Commands::CreateUser {
             email,
             name,
