@@ -51,7 +51,6 @@ fn status_ord(s: &str) -> u8 {
 use crate::components::{ActivitySidebar, Header, MailBanner, MailTestModal};
 use crate::pages::item_detail::ItemDetailModal;
 use crate::pages::item_form::NewItemModal;
-use crate::pages::manage_vendors::ManageVendorsModal;
 
 fn name_to_color(name: &str) -> String {
     let hash: u32 = name
@@ -128,7 +127,6 @@ pub fn home(props: &HomeProps) -> Html {
     let refresh_trigger = use_state(|| 0u32);
     let filter_vendor_id = use_state(|| None::<i32>);
     let filter_owner_id = use_state(|| None::<i32>);
-    let show_manage_vendors_modal = use_state(|| false);
     let show_mail_test_modal = use_state(|| false);
     let show_completed = use_state(|| false);
     let sort_column = use_state(|| SortColumn::Id);
@@ -238,13 +236,6 @@ pub fn home(props: &HomeProps) -> Html {
         })
     };
 
-    let on_manage_vendors_click = {
-        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
-        Callback::from(move |_| {
-            show_manage_vendors_modal.set(true);
-        })
-    };
-
     let on_mail_test_click = {
         let show_mail_test_modal = show_mail_test_modal.clone();
         Callback::from(move |_| {
@@ -256,15 +247,6 @@ pub fn home(props: &HomeProps) -> Html {
         let show_mail_test_modal = show_mail_test_modal.clone();
         Callback::from(move |_| {
             show_mail_test_modal.set(false);
-        })
-    };
-
-    let on_manage_vendors_close = {
-        let show_manage_vendors_modal = show_manage_vendors_modal.clone();
-        let refresh_trigger = refresh_trigger.clone();
-        Callback::from(move |_| {
-            show_manage_vendors_modal.set(false);
-            refresh_trigger.set(*refresh_trigger + 1);
         })
     };
 
@@ -370,7 +352,7 @@ pub fn home(props: &HomeProps) -> Html {
 
     html! {
         <>
-            <Header />
+            <Header on_vendors_changed={on_data_refresh.clone()} />
             <main>
                 <MailBanner />
                 <div class="page-header">
@@ -378,9 +360,6 @@ pub fn home(props: &HomeProps) -> Html {
                     <div class="header-actions">
                         <button type="button" class="btn btn-secondary" onclick={on_mail_test_click}>
                             { "Test Email" }
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick={on_manage_vendors_click}>
-                            { "Manage Vendors" }
                         </button>
                         <button type="button" class="btn btn-primary" onclick={on_new_item_click} disabled={vendors.is_empty()}>
                             { "+ New Item" }
@@ -441,10 +420,6 @@ pub fn home(props: &HomeProps) -> Html {
                     />
                 }
 
-                if *show_manage_vendors_modal {
-                    <ManageVendorsModal on_close={on_manage_vendors_close} />
-                }
-
                 if *show_mail_test_modal {
                     <MailTestModal on_close={on_mail_test_close} />
                 }
@@ -466,7 +441,7 @@ pub fn home(props: &HomeProps) -> Html {
                         } else if let Some(err) = (*error).clone() {
                             <p class="error">{ err }</p>
                         } else if vendors.is_empty() {
-                            <p>{ "No vendors configured. Click 'Manage Vendors' to add one." }</p>
+                            <p>{ "No vendors configured. Use 'Manage Vendors' in the top bar to add one." }</p>
                         } else if items.is_empty() {
                             <p>{ "No action items yet. Click '+ New Item' to create one." }</p>
                         } else if filtered_items.is_empty() {

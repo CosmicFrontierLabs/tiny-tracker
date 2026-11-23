@@ -724,6 +724,11 @@ where
 /// and `None` leaves it alone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct UpdateRisk {
+    /// Move the risk to another vendor. The ID does not change (risk numbers
+    /// are programme-wide) and item links are kept; the move is recorded in
+    /// the history as a `vendor` row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_id: Option<i32>,
     #[serde(
         default,
         deserialize_with = "double_option",
@@ -814,6 +819,8 @@ pub enum RiskHistoryField {
     Trend,
     Severity,
     Likelihood,
+    /// The risk was moved to another vendor; values are the prefixes.
+    Vendor,
 }
 
 impl RiskHistoryField {
@@ -825,6 +832,7 @@ impl RiskHistoryField {
             RiskHistoryField::Trend => "trend",
             RiskHistoryField::Severity => "severity",
             RiskHistoryField::Likelihood => "likelihood",
+            RiskHistoryField::Vendor => "vendor",
         }
     }
 
@@ -835,6 +843,7 @@ impl RiskHistoryField {
             RiskHistoryField::Trend,
             RiskHistoryField::Severity,
             RiskHistoryField::Likelihood,
+            RiskHistoryField::Vendor,
         ]
         .into_iter()
         .find(|f| f.as_str() == label.trim())
@@ -918,6 +927,7 @@ mod risk_tests {
             RiskHistoryField::Trend,
             RiskHistoryField::Severity,
             RiskHistoryField::Likelihood,
+            RiskHistoryField::Vendor,
         ] {
             assert_eq!(RiskHistoryField::from_label(f.as_str()), Some(f));
         }

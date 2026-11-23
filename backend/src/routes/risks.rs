@@ -603,6 +603,7 @@ pub async fn update(
             validate_scale(l, "Likelihood")?;
         }
         Ok(UpdateRisk {
+            vendor_id: payload.vendor_id,
             component: normalize_update(payload.component, "Component", COMPONENT_MAX_LEN)?,
             category: payload
                 .category
@@ -639,7 +640,8 @@ pub async fn update(
 
     // Read the tracked fields before writing so the history row can say what
     // they moved from. A deleted risk reads as absent here too.
-    let before: Option<(String, String, f64, f64)> = match risks::table
+    let before: Option<(String, String, f64, f64, i32, String)> = match risks::table
+        .inner_join(vendors::table)
         .filter(risks::id.eq(&risk_id))
         .filter(risks::deleted_at.is_null())
         .select((
@@ -647,6 +649,8 @@ pub async fn update(
             risks::trend,
             risks::severity,
             risks::likelihood,
+            risks::vendor_id,
+            vendors::prefix,
         ))
         .first(&mut conn)
         .await
@@ -655,11 +659,40 @@ pub async fn update(
         Ok(b) => b,
         Err(_) => return internal("Failed to fetch risk"),
     };
-    let Some((old_status, old_trend, old_sev, old_lik)) = before else {
+    let Some((old_status, old_trend, old_sev, old_lik, old_vendor_id, old_prefix)) = before else {
         return risk_not_found(&risk_id);
     };
 
     let mut changes: Vec<(RiskHistoryField, Option<String>, Option<String>)> = Vec::new();
+    // A vendor move must land on a live vendor. An archived one is refused:
+    // the register hides archived vendors, so the risk would vanish.
+    if let Some(new_vendor_id) = changeset.vendor_id.filter(|v| *v != old_vendor_id) {
+        let target: Option<Vendor> = match vendors::table
+            .filter(vendors::id.eq(new_vendor_id))
+            .first(&mut conn)
+            .await
+            .optional()
+        {
+            Ok(v) => v,
+            Err(_) => return internal("Failed to fetch vendor"),
+        };
+        let Some(target) = target else {
+            return bad_request(ApiError::validation_error(format!(
+                "Vendor {new_vendor_id} not found"
+            )));
+        };
+        if target.archived {
+            return bad_request(ApiError::validation_error(format!(
+                "Vendor {} is archived; unarchive it before moving risks to it",
+                target.prefix
+            )));
+        }
+        changes.push((
+            RiskHistoryField::Vendor,
+            Some(old_prefix.clone()),
+            Some(target.prefix),
+        ));
+    }
     if let Some(new) = changeset.status.as_deref().filter(|s| *s != old_status) {
         changes.push((
             RiskHistoryField::Status,

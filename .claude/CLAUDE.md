@@ -297,11 +297,17 @@ refuses numbers already used by another vendor's risks, advances the sequence
 past the highest imported number, and warns when the sheet's Level disagrees
 with the computed one.
 
+A risk can be moved to another vendor (`PATCH /api/risks/:id` with
+`vendor_id`, the Vendor select on the risk modal, or `risks update --vendor`
+in the CLI). The `RISK-nnn` ID does not change and item links are kept; the
+target must be a live vendor, and the move is a `vendor` row in
+`risk_history` carrying the old and new prefix.
+
 ### Risks have two timelines, like items
 
 `risk_notes` is free-text discussion. `risk_history` records who moved a
-risk's status, trend, severity or likelihood, when, from what to what, and
-why: one row per field, rows from one edit sharing a `changed_at`, and a
+risk's status, trend, severity, likelihood or vendor, when, from what to
+what, and why: one row per field, rows from one edit sharing a `changed_at`, and a
 `created` row opening every timeline (backfilled by the migration for risks
 that predate it). `PATCH /api/risks/:id` compares the tracked fields before
 writing and records only what actually moved, with the optional `comment`
@@ -372,7 +378,7 @@ All `/api/*` routes require authentication (JWT cookie).
 | GET | `/go/:item_id` | Deep link redirect |
 | GET | `/api/risks` | List risks (`?vendor_id=`, `?status=`), highest score first |
 | GET/POST | `/api/vendors/:id/risks` | List / create risks for vendor |
-| GET/PATCH/DELETE | `/api/risks/:id` | Get / update / soft-delete risk (delete is admin-only) |
+| GET/PATCH/DELETE | `/api/risks/:id` | Get / update / soft-delete risk (`vendor_id` moves it; delete is admin-only) |
 | GET/POST | `/api/risks/:id/items` | Live action items linked to a risk / link several (`{"item_ids":[...]}`) |
 | GET/POST | `/api/items/:id/risks` | Risks linked to an item / link one (`{"risk_id"}`) |
 | GET/POST | `/api/risks/:id/notes` | List / add notes on a risk |

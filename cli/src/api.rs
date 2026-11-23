@@ -552,9 +552,12 @@ pub enum RisksCmd {
         #[arg(long = "item")]
         items: Vec<String>,
     },
-    /// Change fields on a risk; status, trend, severity and likelihood changes are recorded
+    /// Change fields on a risk; vendor, status, trend, severity and likelihood changes are recorded
     Update {
         id: String,
+        /// Move the risk to another vendor: prefix or ID. The RISK-nnn ID is unchanged
+        #[arg(long)]
+        vendor: Option<String>,
         #[arg(long)]
         title: Option<String>,
         #[arg(long)]
@@ -1179,6 +1182,7 @@ pub fn risks(client: &Client, cmd: RisksCmd) -> anyhow::Result<()> {
 
         RisksCmd::Update {
             id,
+            vendor,
             title,
             category,
             severity,
@@ -1208,6 +1212,9 @@ pub fn risks(client: &Client, cmd: RisksCmd) -> anyhow::Result<()> {
                 }
             }
             let body = UpdateRisk {
+                vendor_id: vendor
+                    .map(|v| client.resolve_vendor(&v).map(|v| v.id))
+                    .transpose()?,
                 component: nullable(component, clear_component),
                 category,
                 title,

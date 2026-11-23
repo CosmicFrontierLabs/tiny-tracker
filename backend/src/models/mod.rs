@@ -268,6 +268,7 @@ pub struct NewRisk {
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = risks)]
 pub struct UpdateRisk {
+    pub vendor_id: Option<i32>,
     pub component: Option<Option<String>>,
     pub category: Option<String>,
     pub title: Option<String>,

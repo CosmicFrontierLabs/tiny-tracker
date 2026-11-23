@@ -250,9 +250,14 @@ pub fn risk_register(props: &RiskRegisterProps) -> Html {
         .filter(|r| r.trend != RiskTrend::Closed)
         .count();
 
+    let on_vendors_changed = {
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| refresh_trigger.set(*refresh_trigger + 1))
+    };
+
     html! {
         <>
-            <Header />
+            <Header on_vendors_changed={on_vendors_changed} />
             <main>
                 <div class="page-header">
                     <h2>{ "Risk Register" }</h2>
@@ -315,6 +320,7 @@ pub fn risk_register(props: &RiskRegisterProps) -> Html {
                     <RiskDetailModal
                         risk_id={risk_id}
                         is_admin={*is_admin}
+                        vendors={(*vendors).clone()}
                         on_close={on_detail_close}
                     />
                 }
@@ -324,7 +330,7 @@ pub fn risk_register(props: &RiskRegisterProps) -> Html {
                 } else if let Some(err) = (*error).clone() {
                     <p class="error">{ err }</p>
                 } else if vendors.is_empty() {
-                    <p>{ "No vendors configured. Add one under Action Items → Manage Vendors first." }</p>
+                    <p>{ "No vendors configured. Use 'Manage Vendors' in the top bar to add one." }</p>
                 } else if risks.is_empty() {
                     <p>{ "No risks yet. Click '+ New Risk' to open one." }</p>
                 } else if filtered.is_empty() {

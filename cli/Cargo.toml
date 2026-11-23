@@ -34,3 +34,6 @@ csv = "1"
 
 # Error handling
 anyhow = "1"
+
+# Reset SIGPIPE so `action-tracker-cli ... | head` exits quietly
+libc = "0.2"

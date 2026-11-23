@@ -54,6 +54,13 @@ body {
     text-decoration: none;
 }
 
+.header-tools {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.btn-header,
 .btn-logout {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.4);
@@ -64,11 +71,13 @@ body {
     font-size: 0.85rem;
 }
 
+.btn-header:hover,
 .btn-logout:hover {
     background: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.7);
 }
 
+.btn-header:disabled,
 .btn-logout:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1692,6 +1701,11 @@ td.risk-score.risk-level-low, span.risk-score.risk-level-low { color: #1e8449; }
     }
 
     .header-link {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .btn-header {
         padding: 0.3rem 0.5rem;
         font-size: 0.8rem;
     }

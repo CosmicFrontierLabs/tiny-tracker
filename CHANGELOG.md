@@ -11,6 +11,17 @@ outside this repo and this file is the handoff.
 
 ### Added
 
+- **Risks can be moved between vendors.** The risk modal's edit form has a
+  Vendor select, `PATCH /api/risks/:id` accepts `vendor_id`, and the CLI
+  has `risks update RISK-034 --vendor AD`. The `RISK-nnn` ID is unchanged
+  and linked items are kept. The move is recorded in the risk's history as
+  a `vendor` row (`NEU -> AD`), which needs migration `000016` (run on
+  container start as usual). Archived vendors are refused as a target.
+
+- **Manage Vendors moved to the top bar.** Vendors belong to both
+  registers, so the control now sits next to Logout on every page instead
+  of only on the Action Items page.
+
 - **API tokens and an HTTP-backed CLI.** `API_TOKENS` (or `API_TOKENS_FILE`,
   at most one) lists `email=secret` pairs. A request with
   `Authorization: Bearer <secret>` acts as that email's user through the
