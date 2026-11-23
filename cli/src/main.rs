@@ -1459,6 +1459,14 @@ pub(crate) fn establish_connection() -> PgConnection {
 }
 
 fn main() {
+    // Rust ignores SIGPIPE and turns a closed stdout into a panic on the
+    // next println. Restore the default so `... | head` ends quietly, as
+    // every other command-line tool does.
+    // SAFETY: setting a signal disposition before any other thread exists.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     // One line on stderr and a non-zero exit, with no backtrace: the message
     // from the server (or the local validation) is the whole story.
     if let Err(e) = run() {

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use gloo_net::http::Request;
 use shared::{
     risk_level, risk_score, ActionItemResponse, CreateRiskNote, RiskHistoryField,
-    RiskHistoryResponse, RiskNoteResponse, RiskResponse, RiskStatus, RiskTrend, UpdateRisk,
+    RiskHistoryResponse, RiskNoteResponse, RiskResponse, RiskStatus, RiskTrend, UpdateRisk, Vendor,
 };
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -22,12 +22,17 @@ pub struct RiskDetailModalProps {
     /// regardless.
     #[prop_or_default]
     pub is_admin: bool,
+    /// Live vendors, for moving the risk. With none supplied the vendor is
+    /// shown but cannot be changed.
+    #[prop_or_default]
+    pub vendors: Vec<Vendor>,
     pub on_close: Callback<()>,
 }
 
 /// The editable fields, as strings, while the form is open.
 #[derive(Clone, PartialEq, Default)]
 struct EditFields {
+    vendor_id: i32,
     component: String,
     category: String,
     title: String,
@@ -97,6 +102,7 @@ fn field_label(f: RiskHistoryField) -> &'static str {
         RiskHistoryField::Trend => "trend",
         RiskHistoryField::Severity => "severity",
         RiskHistoryField::Likelihood => "likelihood",
+        RiskHistoryField::Vendor => "vendor",
     }
 }
 
@@ -120,6 +126,7 @@ impl Default for RiskTrendOrDefault {
 impl EditFields {
     fn from_risk(r: &RiskResponse) -> Self {
         Self {
+            vendor_id: r.vendor_id,
             component: r.component.clone().unwrap_or_default(),
             category: r.category.clone(),
             title: r.title.clone(),
@@ -156,6 +163,7 @@ impl EditFields {
             .parse()
             .map_err(|_| "Opened date is not a valid date")?;
         Ok(UpdateRisk {
+            vendor_id: Some(self.vendor_id),
             component: Some(blank_to_none(&self.component)),
             category: Some(self.category.trim().to_string()),
             title: Some(self.title.trim().to_string()),
@@ -619,6 +627,22 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
                                 </div>
                                 <div class="risk-form-grid">
                                     <div class="form-group">
+                                        <label>{ "Vendor" }</label>
+                                        if props.vendors.is_empty() {
+                                            <input type="text" value={r.vendor_prefix.clone()} disabled=true />
+                                        } else {
+                                            <select onchange={select_handler(|f, v| {
+                                                if let Ok(id) = v.parse() { f.vendor_id = id; }
+                                            })}>
+                                                { for props.vendors.iter().map(|v| html! {
+                                                    <option value={v.id.to_string()} selected={fields.vendor_id == v.id}>
+                                                        { format!("{} - {}", v.prefix, v.name) }
+                                                    </option>
+                                                })}
+                                            </select>
+                                        }
+                                    </div>
+                                    <div class="form-group">
                                         <label>{ "Item" }</label>
                                         <input type="text" value={fields.component.clone()}
                                             oninput={field_handler(|f, v| f.component = v)} />
@@ -732,6 +756,9 @@ pub fn risk_detail_modal(props: &RiskDetailModalProps) -> Html {
                                 </span>
                                 <span class="meta-item">
                                     <strong>{ "Trend: " }</strong><span class={trend_class(r.trend)}>{ r.trend.as_str() }</span>
+                                </span>
+                                <span class="meta-item">
+                                    <strong>{ "Vendor: " }</strong>{ &r.vendor_prefix }
                                 </span>
                                 <span class="meta-item">
                                     <strong>{ "Item: " }</strong>{ r.component.as_deref().unwrap_or("-") }
