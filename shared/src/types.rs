@@ -7,41 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Category {
-    Programmatic,
-    SwOps,
-    Mechanical,
-    Adcs,
-    Systems,
-    ConOps,
-}
-
-impl Category {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Category::Programmatic => "Programmatic",
-            Category::SwOps => "SW / Ops",
-            Category::Mechanical => "Mechanical",
-            Category::Adcs => "ADCS",
-            Category::Systems => "Systems",
-            Category::ConOps => "ConOps",
-        }
-    }
-
-    pub fn all() -> &'static [Category] {
-        &[
-            Category::Programmatic,
-            Category::SwOps,
-            Category::Mechanical,
-            Category::Adcs,
-            Category::Systems,
-            Category::ConOps,
-        ]
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum Priority {
     High,
     Medium,
@@ -59,6 +24,14 @@ impl Priority {
 
     pub fn all() -> &'static [Priority] {
         &[Priority::High, Priority::Medium, Priority::Low]
+    }
+
+    /// Parse the display label (`High`), case-insensitively.
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|p| p.as_str().eq_ignore_ascii_case(label.trim()))
     }
 }
 
@@ -95,6 +68,24 @@ impl Status {
             Status::Blocked,
         ]
     }
+
+    /// Parse either the display label (`In Progress`) or the wire value
+    /// (`in_progress`), case-insensitively, treating spaces and hyphens as
+    /// underscores. This is what lets a CLI or a script name a status the way
+    /// a person would say it.
+    pub fn from_label(label: &str) -> Option<Self> {
+        let wanted = normalize_label(label);
+        Self::all()
+            .iter()
+            .copied()
+            .find(|s| normalize_label(s.as_str()) == wanted)
+    }
+}
+
+/// Lower-case and fold separators so `In Progress`, `in-progress` and
+/// `in_progress` all compare equal.
+fn normalize_label(label: &str) -> String {
+    label.trim().to_ascii_lowercase().replace([' ', '-'], "_")
 }
 
 // ============================================================================
@@ -128,30 +119,6 @@ pub struct User {
     pub name: String,
     pub initials: Option<String>,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ActionItem {
-    pub id: String,
-    pub vendor_id: i32,
-    pub number: i32,
-    pub title: String,
-    pub create_date: NaiveDate,
-    pub created_by_id: i32,
-    pub due_date: Option<NaiveDate>,
-    pub category: Category,
-    pub owner_id: i32,
-    pub priority: Priority,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ActionItemWithStatus {
-    #[serde(flatten)]
-    pub item: ActionItem,
-    pub status: Status,
-    pub status_changed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -197,26 +164,60 @@ pub struct UpdateVendor {
     pub prefix: Option<String>,
 }
 
+/// Body of `POST /api/vendors/:id/items`. The vendor comes from the path and
+/// the ID is assigned server-side from the vendor's counter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreateActionItem {
     pub title: String,
     pub due_date: Option<NaiveDate>,
-    pub category: Category,
+    /// A category row for this vendor (`GET /api/vendors/:id/categories`).
+    pub category_id: i32,
     pub owner_id: i32,
-    pub priority: Priority,
+    /// Display label, one of [`Priority::as_str`].
+    pub priority: String,
     pub description: Option<String>,
     pub vendor_tracking_ids: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Body of `PATCH /api/items/:id`. Every field optional. For nullable fields
+/// the outer `Option` is "was this field sent" and the inner one is the new
+/// value, so `Some(None)` clears it and `None` leaves it alone; see
+/// [`UpdateRisk`] for the same convention.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct UpdateActionItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub due_date: Option<Option<NaiveDate>>,
-    pub category: Option<Category>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<i32>,
-    pub priority: Option<Priority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub vendor_tracking_ids: Option<Option<String>>,
+}
+
+/// Body of `POST /api/vendors/:id/categories`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateCategory {
+    pub name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -921,6 +922,31 @@ mod risk_tests {
             assert_eq!(RiskHistoryField::from_label(f.as_str()), Some(f));
         }
         assert_eq!(RiskHistoryField::from_label("score"), None);
+    }
+
+    #[test]
+    fn item_status_parses_labels_and_wire_values() {
+        assert_eq!(Status::from_label("In Progress"), Some(Status::InProgress));
+        assert_eq!(Status::from_label("in_progress"), Some(Status::InProgress));
+        assert_eq!(Status::from_label("in-progress"), Some(Status::InProgress));
+        assert_eq!(Status::from_label(" tbc "), Some(Status::Tbc));
+        assert_eq!(Status::from_label("Not Started"), Some(Status::NotStarted));
+        assert_eq!(Status::from_label("done"), None);
+        assert_eq!(Priority::from_label("HIGH"), Some(Priority::High));
+        assert_eq!(Priority::from_label("urgent"), None);
+    }
+
+    #[test]
+    fn update_action_item_distinguishes_clear_from_untouched() {
+        // `{"due_date": null}` must clear the date. A plain Option<Option<T>>
+        // would read it as "not sent" and silently do nothing.
+        let cleared: UpdateActionItem = serde_json::from_str(r#"{"due_date": null}"#).unwrap();
+        assert_eq!(cleared.due_date, Some(None));
+        assert_eq!(cleared.description, None);
+        assert_eq!(cleared.title, None);
+
+        let untouched = UpdateActionItem::default();
+        assert_eq!(serde_json::to_string(&untouched).unwrap(), "{}");
     }
 
     #[test]

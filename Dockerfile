@@ -26,7 +26,7 @@ COPY frontend ./frontend
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 WORKDIR /app/backend
-RUN cargo build --release
+RUN cargo build --release -p backend -p cli
 RUN /app/target/release/action-tracker --check-assets
 
 # Build diesel CLI for migrations
@@ -41,6 +41,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=backend-builder /app/target/release/action-tracker /usr/local/bin/action-tracker
+# The CLI ships in the image so an operator (or an agent) exec'd into the
+# container can use it against the local server with a token, or run the
+# admin commands against DATABASE_URL.
+COPY --from=backend-builder /app/target/release/action-tracker-cli /usr/local/bin/action-tracker-cli
 COPY --from=backend-builder /usr/local/cargo/bin/diesel /usr/local/bin/diesel
 COPY migrations /app/migrations
 COPY diesel.toml /app/diesel.toml

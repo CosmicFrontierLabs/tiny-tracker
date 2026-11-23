@@ -11,6 +11,33 @@ outside this repo and this file is the handoff.
 
 ### Added
 
+- **API tokens and an HTTP-backed CLI.** `API_TOKENS` (or `API_TOKENS_FILE`,
+  at most one) lists `email=secret` pairs. A request with
+  `Authorization: Bearer <secret>` acts as that email's user through the
+  same `AuthUser` extractor as a browser session, so every rule the handlers
+  enforce applies and every write is attributed to the service identity. The
+  user row is created on first use. Secrets must be at least 32 characters,
+  are compared in constant time, never appear in logs, and one email may
+  hold several so a token can be rotated without a gap. Admin rights still
+  come from `ADMIN_EMAILS`. A bearer header is checked even in dev mode.
+
+  `action-tracker-cli` gains `whoami`, `vendors`, `users`, `categories`,
+  `items`, `risks` and `activity` subcommands that drive `/api/*` over HTTP
+  (`TRACKER_URL` plus `TRACKER_TOKEN` or `TRACKER_TOKEN_FILE`, `--json` for
+  machine-readable output), covering create, update, status, notes, history
+  and risk linking. The existing database commands are unchanged. The binary
+  is now included in the container image.
+
+  Also in this change: clearing an item's due date, description or tracking
+  IDs from the UI now works (the server previously read `null` as "not
+  sent"), and an item's priority is validated against `High`/`Medium`/`Low`.
+
+  **Deployment change:** optional. To enable, generate a secret
+  (`openssl rand -hex 32`), add `API_TOKENS=agent@example.org=<secret>` (or
+  mount a file and set `API_TOKENS_FILE`), and recreate the container
+  (`docker compose up -d`, not a restart, so the new variable is picked up).
+  Nothing changes if neither variable is set.
+
 - **`JWT_SECRET_FILE`.** The JWT secret can now be read from a file (e.g. a
   read-only bind mount at `/run/secrets/session.key`) instead of the
   `JWT_SECRET` env var, keeping it out of `docker inspect` and out of the

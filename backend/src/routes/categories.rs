@@ -6,8 +6,7 @@ use axum::{
 };
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use serde::Deserialize;
-use shared::{ApiError, CategoryResponse};
+use shared::{ApiError, CategoryResponse, CreateCategory};
 use std::sync::Arc;
 
 use crate::db::schema::{categories, vendors};
@@ -15,12 +14,6 @@ use crate::models::{Category, NewCategory, Vendor};
 use crate::AppState;
 
 use super::AuthUser;
-
-#[derive(Debug, Deserialize)]
-pub struct CreateCategoryReq {
-    pub name: String,
-    pub description: Option<String>,
-}
 
 pub async fn list_all(State(state): State<Arc<AppState>>, _auth: AuthUser) -> impl IntoResponse {
     let mut conn = match super::get_conn(&state).await {
@@ -83,7 +76,7 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Path(vendor_id): Path<i32>,
     _auth: AuthUser,
-    Json(payload): Json<CreateCategoryReq>,
+    Json(payload): Json<CreateCategory>,
 ) -> impl IntoResponse {
     // Validate name
     if payload.name.is_empty() || payload.name.len() > 100 {

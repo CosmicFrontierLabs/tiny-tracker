@@ -8,7 +8,10 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use serde::Deserialize;
-use shared::{ActionItemResponse, ApiError};
+use shared::{
+    ActionItemResponse, ApiError, CreateActionItem, Priority,
+    UpdateActionItem as UpdateActionItemReq,
+};
 use std::sync::Arc;
 
 use crate::db::schema::{action_items, categories, status_history, users, vendors};
@@ -29,29 +32,25 @@ pub struct ItemsQuery {
     pub priority: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateActionItemReq {
-    pub title: String,
-    pub due_date: Option<chrono::NaiveDate>,
-    pub category_id: i32,
-    pub owner_id: i32,
-    pub priority: String,
-    pub description: Option<String>,
-    pub vendor_tracking_ids: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateActionItemReq {
-    pub title: Option<String>,
-    pub due_date: Option<Option<chrono::NaiveDate>>,
-    pub category_id: Option<i32>,
-    pub owner_id: Option<i32>,
-    pub priority: Option<String>,
-    pub description: Option<Option<String>>,
-    pub vendor_tracking_ids: Option<Option<String>>,
-}
-
 const VENDOR_TRACKING_IDS_MAX_LEN: usize = 1000;
+
+/// Priority is stored as its display label. Accept the label in any case and
+/// store the canonical spelling, so the column never holds "high" and "High"
+/// as two different values.
+fn normalize_priority(raw: &str) -> Result<String, ApiError> {
+    Priority::from_label(raw)
+        .map(|p| p.as_str().to_string())
+        .ok_or_else(|| {
+            ApiError::validation_error(format!(
+                "Invalid priority. Must be one of: {}",
+                Priority::all()
+                    .iter()
+                    .map(|p| p.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })
+}
 
 /// Trim a submitted tracking-ID string, folding whitespace-only input to `None`
 /// so clearing the field in the UI stores NULL rather than an empty string.
@@ -303,7 +302,7 @@ pub async fn create(
     State(state): State<Arc<AppState>>,
     Path(vendor_id): Path<i32>,
     auth: AuthUser,
-    Json(payload): Json<CreateActionItemReq>,
+    Json(payload): Json<CreateActionItem>,
 ) -> impl IntoResponse {
     // Validate title
     if payload.title.is_empty() || payload.title.len() > 500 {
@@ -313,6 +312,11 @@ pub async fn create(
         )
             .into_response();
     }
+
+    let priority = match normalize_priority(&payload.priority) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+    };
 
     let vendor_tracking_ids = match normalize_tracking_ids(payload.vendor_tracking_ids) {
         Ok(v) => v,
@@ -400,7 +404,7 @@ pub async fn create(
         created_by_id: auth.user_id,
         due_date: payload.due_date,
         owner_id: payload.owner_id,
-        priority: payload.priority,
+        priority,
         description: payload.description,
         category_id: payload.category_id,
         vendor_tracking_ids,
@@ -481,6 +485,12 @@ pub async fn update(
         }
     }
 
+    let priority = match payload.priority.as_deref().map(normalize_priority) {
+        None => None,
+        Some(Ok(p)) => Some(p),
+        Some(Err(e)) => return (StatusCode::BAD_REQUEST, Json(e)).into_response(),
+    };
+
     // `Some(None)` clears the field; `None` leaves it alone. Normalising inside
     // the outer `Some` keeps that distinction while still folding "" to NULL.
     let vendor_tracking_ids = match payload.vendor_tracking_ids {
@@ -501,7 +511,7 @@ pub async fn update(
         due_date: payload.due_date,
         category_id: payload.category_id,
         owner_id: payload.owner_id,
-        priority: payload.priority,
+        priority,
         description: payload.description,
         vendor_tracking_ids,
         updated_at: Some(Utc::now()),
