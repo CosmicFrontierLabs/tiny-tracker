@@ -5,7 +5,6 @@ use axum::{
     Json,
 };
 use diesel::prelude::*;
-use diesel_async::scoped_futures::ScopedFutureExt;
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use serde::Deserialize;
 use shared::{ApiError, CreateVendor, UpdateVendor as UpdateVendorReq, VendorWithCounts};
@@ -60,74 +59,71 @@ async fn apply_update(
     changeset: UpdateVendor,
     new_prefix: Option<String>,
 ) -> Result<UpdateOutcome, diesel::result::Error> {
-    conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        async move {
-            let current: Option<VendorRow> = vendors::table
-                .filter(vendors::id.eq(id))
-                .first(conn)
-                .await
-                .optional()?;
-            let Some(current) = current else {
-                return Ok(UpdateOutcome::NotFound);
-            };
+    conn.transaction::<_, diesel::result::Error, _>(async move |conn| {
+        let current: Option<VendorRow> = vendors::table
+            .filter(vendors::id.eq(id))
+            .first(conn)
+            .await
+            .optional()?;
+        let Some(current) = current else {
+            return Ok(UpdateOutcome::NotFound);
+        };
 
-            if let Some(new_prefix) = new_prefix.filter(|p| *p != current.prefix) {
-                let taken = diesel::update(vendors::table.filter(vendors::id.eq(id)))
-                    .set(vendors::prefix.eq(&new_prefix))
-                    .execute(conn)
-                    .await;
-                match taken {
-                    Ok(_) => {}
-                    Err(diesel::result::Error::DatabaseError(
-                        diesel::result::DatabaseErrorKind::UniqueViolation,
-                        _,
-                    )) => return Ok(UpdateOutcome::PrefixTaken),
-                    Err(e) => return Err(e),
-                }
-
-                // Keep whatever follows the old prefix ("-001") verbatim rather
-                // than re-deriving it from `number`, so imported IDs with
-                // unusual padding survive the rename unchanged apart from the
-                // prefix. substr() is 1-based: position len+1 is the hyphen.
-                let rewritten = diesel::sql_query(
-                    "UPDATE action_items SET id = $1 || substr(id, $2) WHERE vendor_id = $3",
-                )
-                .bind::<diesel::sql_types::Text, _>(&new_prefix)
-                .bind::<diesel::sql_types::Integer, _>(current.prefix.len() as i32 + 1)
-                .bind::<diesel::sql_types::Integer, _>(id)
+        if let Some(new_prefix) = new_prefix.filter(|p| *p != current.prefix) {
+            let taken = diesel::update(vendors::table.filter(vendors::id.eq(id)))
+                .set(vendors::prefix.eq(&new_prefix))
                 .execute(conn)
-                .await?;
-
-                tracing::info!(
-                    vendor_id = id,
-                    from = %current.prefix,
-                    to = %new_prefix,
-                    items = rewritten,
-                    "vendor prefix renamed"
-                );
+                .await;
+            match taken {
+                Ok(_) => {}
+                Err(diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::UniqueViolation,
+                    _,
+                )) => return Ok(UpdateOutcome::PrefixTaken),
+                Err(e) => return Err(e),
             }
 
-            // Diesel rejects an UPDATE with an empty changeset, and a
-            // prefix-only request has exactly that, so only apply it when
-            // there is something in it.
-            let has_changes = changeset.name.is_some()
-                || changeset.description.is_some()
-                || changeset.archived.is_some();
-            let updated: VendorRow = if has_changes {
-                diesel::update(vendors::table.filter(vendors::id.eq(id)))
-                    .set(&changeset)
-                    .returning(VendorRow::as_returning())
-                    .get_result(conn)
-                    .await?
-            } else {
-                vendors::table
-                    .filter(vendors::id.eq(id))
-                    .first(conn)
-                    .await?
-            };
-            Ok(UpdateOutcome::Updated(updated))
+            // Keep whatever follows the old prefix ("-001") verbatim rather
+            // than re-deriving it from `number`, so imported IDs with
+            // unusual padding survive the rename unchanged apart from the
+            // prefix. substr() is 1-based: position len+1 is the hyphen.
+            let rewritten = diesel::sql_query(
+                "UPDATE action_items SET id = $1 || substr(id, $2) WHERE vendor_id = $3",
+            )
+            .bind::<diesel::sql_types::Text, _>(&new_prefix)
+            .bind::<diesel::sql_types::Integer, _>(current.prefix.len() as i32 + 1)
+            .bind::<diesel::sql_types::Integer, _>(id)
+            .execute(conn)
+            .await?;
+
+            tracing::info!(
+                vendor_id = id,
+                from = %current.prefix,
+                to = %new_prefix,
+                items = rewritten,
+                "vendor prefix renamed"
+            );
         }
-        .scope_boxed()
+
+        // Diesel rejects an UPDATE with an empty changeset, and a
+        // prefix-only request has exactly that, so only apply it when
+        // there is something in it.
+        let has_changes = changeset.name.is_some()
+            || changeset.description.is_some()
+            || changeset.archived.is_some();
+        let updated: VendorRow = if has_changes {
+            diesel::update(vendors::table.filter(vendors::id.eq(id)))
+                .set(&changeset)
+                .returning(VendorRow::as_returning())
+                .get_result(conn)
+                .await?
+        } else {
+            vendors::table
+                .filter(vendors::id.eq(id))
+                .first(conn)
+                .await?
+        };
+        Ok(UpdateOutcome::Updated(updated))
     })
     .await
 }
